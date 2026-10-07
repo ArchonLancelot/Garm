@@ -1,9 +1,14 @@
-"""Read, write, and validate v0.1 failure dossiers. Stdlib only.
+"""Read, write, and validate Autopsy failure dossiers. Stdlib only.
 
 A dossier is a Markdown file: a simple ``key: value`` frontmatter block
 between ``---`` delimiters, then ``##`` sections. Validation is structural —
 it checks that the required fields and sections exist and are non-empty. It
 does not (and cannot) check whether the analysis is true.
+
+v0.2 adds ``failure_class`` (what kind of failure this was) and
+``confirmed_fixes`` (how many later runs a retrieved dossier demonstrably
+helped — see ``autopsy confirm``). v0.1 dossiers still validate; they are
+treated as legacy and simply lack the new fields.
 """
 
 from __future__ import annotations
@@ -13,7 +18,8 @@ import re
 from datetime import date
 from pathlib import Path
 
-DOSSIER_VERSION = "0.1"
+DOSSIER_VERSION = "0.2"
+ACCEPTED_VERSIONS = ("0.1", "0.2")
 
 REQUIRED_FRONTMATTER_FIELDS = (
     "dossier_version",
@@ -24,6 +30,17 @@ REQUIRED_FRONTMATTER_FIELDS = (
     "outcome",
 )
 VALID_OUTCOMES = ("failed", "recovered")
+
+# v0.2: what kind of failure the dossier autopsies. Pick the closest one —
+# different classes fail (and get fixed) differently, so retrieval and
+# review can treat them differently.
+VALID_FAILURE_CLASSES = (
+    "knowledge-gap",    # the agent lacked a fact it needed
+    "reasoning-error",  # the facts were there; the reasoning went wrong
+    "execution-slip",   # knew better; fumbled the execution (typo, wrong command)
+    "tool-misuse",      # wrong tool for the job, or a tool used wrongly
+    "misread-task",     # solved the wrong problem / misread the requirements
+)
 
 # Section titles, matched case-insensitively against ``##`` headers.
 REQUIRED_SECTIONS = (
@@ -140,11 +157,37 @@ def validate_dossier(path: str | Path) -> list[str]:
         if not frontmatter.get(field):
             errors.append(f"frontmatter: missing or empty field '{field}'")
 
-    if frontmatter.get("dossier_version") not in (DOSSIER_VERSION,):
-        if frontmatter.get("dossier_version"):
+    version = frontmatter.get("dossier_version", "")
+    if version not in ACCEPTED_VERSIONS:
+        if version:
             errors.append(
-                f"frontmatter: dossier_version is "
-                f"{frontmatter['dossier_version']!r}, expected {DOSSIER_VERSION!r}"
+                f"frontmatter: dossier_version is {version!r}, "
+                f"expected one of {ACCEPTED_VERSIONS}"
+            )
+    is_v02 = version == DOSSIER_VERSION
+
+    # v0.2: failure_class is required; v0.1 dossiers predate it (legacy).
+    failure_class = frontmatter.get("failure_class", "")
+    if is_v02:
+        if not failure_class:
+            errors.append("frontmatter: missing required field 'failure_class'")
+        elif failure_class not in VALID_FAILURE_CLASSES:
+            errors.append(
+                f"frontmatter: failure_class {failure_class!r} must be one of "
+                f"{VALID_FAILURE_CLASSES}"
+            )
+
+    # confirmed_fixes is optional in the file; absent means 0. Present must
+    # be a non-negative integer.
+    confirmed_raw = frontmatter.get("confirmed_fixes", "")
+    if confirmed_raw:
+        try:
+            if int(confirmed_raw) < 0:
+                raise ValueError
+        except ValueError:
+            errors.append(
+                f"frontmatter: confirmed_fixes {confirmed_raw!r} must be a "
+                f"non-negative integer"
             )
 
     dossier_id = frontmatter.get("id", "")
@@ -197,12 +240,23 @@ def render_template(
     task: str,
     agent: str,
     outcome: str = "failed",
+    failure_class: str = "reasoning-error",
     created: str | None = None,
     id_: str | None = None,
     sections: dict[str, str] | None = None,
 ) -> str:
     """Render a dossier. ``sections`` maps lowercase titles to content; any
-    section not given gets a short guidance line (a scaffold, not a dossier)."""
+    section not given gets a short guidance line (a scaffold, not a dossier).
+
+    ``failure_class`` must be one of VALID_FAILURE_CLASSES — the CLI's
+    ``init`` forces an explicit choice; the default here exists so
+    programmatic callers (and the test suite) aren't forced through argparse.
+    """
+    if failure_class not in VALID_FAILURE_CLASSES:
+        raise ValueError(
+            f"failure_class {failure_class!r} must be one of "
+            f"{VALID_FAILURE_CLASSES}"
+        )
     created = created or date.today().isoformat()
     id_ = id_ or f"{created}-{slugify(task)}"
     clean_task = task.replace('"', "'").strip()
@@ -214,6 +268,8 @@ def render_template(
         f"agent: {agent}",
         f'task: "{clean_task}"',
         f"outcome: {outcome}",
+        f"failure_class: {failure_class}",
+        "confirmed_fixes: 0",
         "---",
         "",
         f"# Failure dossier: {clean_task}",
@@ -235,6 +291,18 @@ def render_template(
     return "\n".join(lines)
 
 
+def _confirmed_fixes_of(frontmatter: dict[str, str]) -> int:
+    """confirmed_fixes as an int; absent or malformed means 0.
+
+    Malformed values are caught by validate_dossier; the index stays lenient
+    so a hand-edited file can't break ``index`` or ``recall``.
+    """
+    try:
+        return max(0, int(frontmatter.get("confirmed_fixes", "") or 0))
+    except ValueError:
+        return 0
+
+
 def build_index_entry(dossier_path: Path, base_dir: Path) -> dict:
     """Build one index.jsonl record from a validated dossier file."""
     parsed = read_dossier(dossier_path)
@@ -247,12 +315,17 @@ def build_index_entry(dossier_path: Path, base_dir: Path) -> dict:
         if cleaned:
             signature_line = cleaned
             break
-    keywords = extract_keywords(fm["task"] + " " + signature_text)
+    task_keywords = extract_keywords(fm["task"])
+    sig_keywords = extract_keywords(signature_text)
     return {
         "id": fm["id"],
+        "version": fm.get("dossier_version", ""),
         "task": fm["task"],
         "signature": signature_line[:140],
-        "keywords": keywords,
+        "keywords": task_keywords + [k for k in sig_keywords if k not in task_keywords],
+        "sig_keywords": sig_keywords,
+        "failure_class": fm.get("failure_class") or None,
+        "confirmed_fixes": _confirmed_fixes_of(fm),
         "outcome": fm["outcome"],
         "path": str(dossier_path.relative_to(base_dir)),
         "created": fm["created"],
@@ -266,3 +339,63 @@ def load_index_entries(index_path: Path) -> list[dict]:
         if line.strip():
             entries.append(json.loads(line))
     return entries
+
+
+_CONFIRMED_RE = re.compile(r'^confirmed_fixes:\s*"?(\d+)"?\s*$')
+
+
+def confirm_dossier(base_dir: str | Path, dossier_id: str) -> tuple[Path, int]:
+    """Record that a retrieved dossier demonstrably helped a later run.
+
+    Finds the dossier whose frontmatter ``id`` matches, increments its
+    ``confirmed_fixes`` counter (adding the field at 1 if absent), rewrites
+    the file, and re-validates it. Returns (path, new_count).
+
+    Raises ValueError if zero or more than one dossier matches the id.
+    Raises ValueError if the file fails validation after the bump.
+    """
+    base = Path(base_dir)
+    matches: list[Path] = []
+    for md in sorted(base.rglob("*.md")):
+        try:
+            fm = read_dossier(md)["frontmatter"]
+        except ValueError:
+            continue
+        if fm.get("id") == dossier_id:
+            matches.append(md)
+    if not matches:
+        raise ValueError(f"no dossier with id {dossier_id!r} in {base}")
+    if len(matches) > 1:
+        raise ValueError(
+            f"multiple dossiers with id {dossier_id!r}: "
+            + ", ".join(str(m) for m in matches)
+        )
+    path = matches[0]
+    lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    if not lines or lines[0].strip() != "---":
+        raise ValueError(f"dossier {path} has malformed frontmatter")
+    try:
+        close_idx = lines.index("---\n", 1)
+    except ValueError:
+        try:
+            close_idx = [l.strip() for l in lines].index("---", 1)
+        except ValueError:
+            raise ValueError(f"dossier {path} has malformed frontmatter") from None
+    new_count = 1
+    replaced = False
+    for i in range(1, close_idx):
+        match = _CONFIRMED_RE.match(lines[i].strip())
+        if match:
+            new_count = int(match.group(1)) + 1
+            lines[i] = f"confirmed_fixes: {new_count}\n"
+            replaced = True
+            break
+    if not replaced:
+        lines.insert(close_idx, "confirmed_fixes: 1\n")
+    path.write_text("".join(lines), encoding="utf-8")
+    errors = validate_dossier(path)
+    if errors:
+        raise ValueError(
+            f"dossier {path} failed validation after confirm: {errors}"
+        )
+    return path, new_count

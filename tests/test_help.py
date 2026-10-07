@@ -1,4 +1,4 @@
-"""The recall help text must be honest about v0.1 ranking."""
+"""The recall help text must be honest about v0.2 ranking."""
 
 import subprocess
 import sys
@@ -25,7 +25,7 @@ class RecallHelpTest(unittest.TestCase):
             cwd=ROOT, capture_output=True, text=True,
         )
         self.assertEqual(r.returncode, 0)
-        for cmd in ("init", "validate", "index", "recall", "list"):
+        for cmd in ("init", "validate", "confirm", "index", "recall", "list"):
             self.assertIn(cmd, r.stdout)
 
 

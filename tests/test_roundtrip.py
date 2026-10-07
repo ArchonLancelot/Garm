@@ -54,6 +54,7 @@ def fill_dossier(path: Path, task: str, agent: str, sections: dict) -> None:
     path.write_text(
         D.render_template(
             task=task, agent=agent,
+            failure_class=frontmatter.get("failure_class", "reasoning-error"),
             id_=frontmatter["id"], created=frontmatter["created"],
             sections=sections,
         ),
@@ -65,12 +66,14 @@ class RoundTripTest(unittest.TestCase):
     def test_init_validate_index_recall(self):
         with tempfile.TemporaryDirectory() as tmp:
             r = autopsy("init", "--task", TASK_A, "--agent", "claude-code",
+                        "--class", "reasoning-error",
                         "-o", "dossiers", cwd=tmp)
             self.assertEqual(r.returncode, 0, r.stderr)
             path_a = Path(tmp) / r.stdout.strip()
             self.assertTrue(path_a.is_file())
 
             r = autopsy("init", "--task", TASK_B, "--agent", "claude-code",
+                        "--class", "tool-misuse",
                         "-o", "dossiers", cwd=tmp)
             self.assertEqual(r.returncode, 0, r.stderr)
             path_b = Path(tmp) / r.stdout.strip()

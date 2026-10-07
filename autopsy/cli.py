@@ -1,4 +1,9 @@
-"""Command-line interface for the v0.1 failure-dossier framework. Stdlib only."""
+"""Command-line interface for Autopsy, the failure-memory framework. Stdlib only.
+
+v0.2: ``init`` takes a failure class, ``confirm`` records dossiers that
+demonstrably helped a later run, and ``recall`` ranks by weighted overlap
+(signature terms count double) plus a small boost for confirmed dossiers.
+"""
 
 from __future__ import annotations
 
@@ -9,6 +14,21 @@ from datetime import date
 from pathlib import Path
 
 from . import dossier as D
+
+# Recall scoring: signature-term overlap counts double (the signature is the
+# retrieval key), task-term overlap counts single, and each confirmed fix
+# adds 1 point up to a cap of 5 so one veteran dossier can't swamp new ones.
+CONFIRMED_BOOST_CAP = 5
+
+
+def recall_score(query_keys: list[str], entry: dict) -> tuple[int, int, int, int]:
+    """Return (total, sig_overlap, task_overlap, boost) for one index entry."""
+    sig_keys = entry.get("sig_keywords") or []
+    task_keys = [k for k in entry.get("keywords", []) if k not in sig_keys]
+    sig_overlap = sum(1 for k in query_keys if k in sig_keys)
+    task_overlap = sum(1 for k in query_keys if k in task_keys)
+    boost = min(int(entry.get("confirmed_fixes", 0) or 0), CONFIRMED_BOOST_CAP)
+    return 2 * sig_overlap + task_overlap + boost, sig_overlap, task_overlap, boost
 
 
 def cmd_init(args: argparse.Namespace) -> int:
@@ -22,11 +42,29 @@ def cmd_init(args: argparse.Namespace) -> int:
         path = out_dir / f"{dossier_id}-{n}.md"
         n += 1
     text = D.render_template(
-        task=args.task, agent=args.agent, outcome=args.outcome, created=created,
+        task=args.task, agent=args.agent, outcome=args.outcome,
+        failure_class=args.failure_class, created=created,
         id_=path.stem,
     )
     path.write_text(text, encoding="utf-8")
     print(str(path))
+    return 0
+
+
+def cmd_confirm(args: argparse.Namespace) -> int:
+    """Record that dossier <id> demonstrably helped a later run.
+
+    Use this when a retrieved dossier changed what a run did and the run
+    then succeeded (or avoided the documented failure). It is the start of
+    the experience flywheel: dossiers that earn their keep rank higher.
+    """
+    try:
+        path, new_count = D.confirm_dossier(args.dir, args.id)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    print(f"confirmed: {args.id} (confirmed fixes: {new_count}) [{path}]")
+    print("hint: run `autopsy index` to refresh index.jsonl", file=sys.stderr)
     return 0
 
 
@@ -38,6 +76,13 @@ def cmd_validate(args: argparse.Namespace) -> int:
             print(f"  - {error}")
         return 1
     print(f"OK: {args.file}")
+    try:
+        fm = D.read_dossier(args.file)["frontmatter"]
+    except ValueError:
+        return 0  # validated above; unreachable
+    if fm.get("dossier_version") == "0.1":
+        print("note: legacy v0.1 dossier (no failure_class); "
+              "still usable, ranks without class filtering", file=sys.stderr)
     return 0
 
 
@@ -76,17 +121,22 @@ def cmd_recall(args: argparse.Namespace) -> int:
         if D.validate_dossier(md):
             continue
         entry = D.build_index_entry(md, base)
+        if args.failure_class and entry.get("failure_class") != args.failure_class:
+            continue
+        total, sig_n, task_n, boost = recall_score(query_keys, entry)
         overlap = [k for k in query_keys if k in entry["keywords"]]
-        scored.append((len(overlap), overlap, entry))
+        scored.append((total, sig_n, task_n, boost, overlap, entry))
     if not scored:
         print(f"no dossiers found in {base}")
         return 1
-    scored.sort(key=lambda s: (-s[0], s[2]["id"]))
+    scored.sort(key=lambda s: (-s[0], -s[5].get("confirmed_fixes", 0), s[5]["id"]))
     top = max(1, args.top)
-    for score, overlap, entry in scored[:top]:
+    for total, sig_n, task_n, boost, overlap, entry in scored[:top]:
         matched = ",".join(overlap) if overlap else "-"
-        print(f"{score:3d} | {entry['id']} | {entry['task']} "
-              f"[{entry['path']}] (matched: {matched})")
+        fixes = entry.get("confirmed_fixes", 0)
+        print(f"{total:3d} | {entry['id']} | {entry['task']} "
+              f"[{entry['path']}] (sig:{sig_n} task:{task_n} confirmed:{fixes} "
+              f"matched: {matched})")
     return 0
 
 
@@ -100,15 +150,22 @@ def cmd_list(args: argparse.Namespace) -> int:
         if D.validate_dossier(md):
             continue
         fm = D.read_dossier(md)["frontmatter"]  # validated above; cannot fail
-        rows.append((fm["id"], fm["outcome"], fm["task"]))
+        rows.append((
+            fm["id"],
+            fm.get("failure_class") or "-",
+            D._confirmed_fixes_of(fm),
+            fm["outcome"],
+            fm["task"],
+        ))
     if not rows:
         print(f"no dossiers found in {base}")
         return 0
     rows.sort(key=lambda r: r[0])
-    print(f"{'ID':42} {'OUTCOME':9} TASK")
-    for dossier_id, outcome, task in rows:
-        task_short = task if len(task) <= 60 else task[:57] + "..."
-        print(f"{dossier_id[:42]:42} {outcome:9} {task_short}")
+    print(f"{'ID':40} {'CLASS':15} {'FIX':4} {'OUTCOME':9} TASK")
+    for dossier_id, failure_class, fixes, outcome, task in rows:
+        task_short = task if len(task) <= 52 else task[:49] + "..."
+        print(f"{dossier_id[:40]:40} {failure_class[:15]:15} {fixes:<4} "
+              f"{outcome:9} {task_short}")
     return 0
 
 
@@ -116,8 +173,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="autopsy",
         description=(
-            "v0.1 failure-memory CLI. Hand-operated: the agent writes the "
-            "analysis; this tool handles structure, storage, validation, "
+            "Autopsy v0.2 failure-memory CLI. Hand-operated: the agent writes "
+            "the analysis; this tool handles structure, storage, validation, "
             "and retrieval."
         ),
     )
@@ -128,13 +185,32 @@ def build_parser() -> argparse.ArgumentParser:
     p_init.add_argument("--agent", required=True, help="which agent/scaffold ran it, e.g. claude-code")
     p_init.add_argument("--outcome", default="failed", choices=["failed", "recovered"],
                         help="failed (default) or recovered")
+    p_init.add_argument("--class", dest="failure_class", required=True,
+                        choices=D.VALID_FAILURE_CLASSES,
+                        help="what kind of failure this was "
+                             f"({', '.join(D.VALID_FAILURE_CLASSES)})")
     p_init.add_argument("-o", "--out-dir", default="dossiers",
                         help="directory to write into (created if missing)")
     p_init.set_defaults(func=cmd_init)
 
-    p_validate = sub.add_parser("validate", help="check a dossier against the v0.1 spec")
+    p_validate = sub.add_parser("validate", help="check a dossier against the spec")
     p_validate.add_argument("file", help="dossier markdown file to check")
     p_validate.set_defaults(func=cmd_validate)
+
+    p_confirm = sub.add_parser(
+        "confirm",
+        help="record that a dossier demonstrably helped a later run",
+        description=(
+            "Increment a dossier's confirmed_fixes counter. Use it when a "
+            "retrieved dossier changed what a run did and the run then "
+            "succeeded (or avoided the documented failure). Confirmed "
+            "dossiers rank higher in recall — this is how the dossier bank "
+            "learns which autopsies earn their keep. Re-run `index` after."
+        ),
+    )
+    p_confirm.add_argument("id", help="dossier id (frontmatter `id:` value)")
+    p_confirm.add_argument("--dir", default="dossiers", help="dossier directory")
+    p_confirm.set_defaults(func=cmd_confirm)
 
     p_index = sub.add_parser("index", help="rebuild dossiers/index.jsonl")
     p_index.add_argument("--dir", default="dossiers", help="dossier directory")
@@ -142,18 +218,25 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_recall = sub.add_parser(
         "recall",
-        help="rank dossiers by keyword overlap for a task description",
+        help="rank dossiers for a task description",
         description=(
-            "Rank dossiers by KEYWORD OVERLAP between your --task text and each "
-            "dossier's task + failure signature. v0.1 ranking is lexical keyword "
-            "overlap, NOT semantic similarity: no embeddings, no model calls, no "
-            "magic. It finds dossiers that talk about the same things, which is "
-            "a starting point, not a diagnosis."
+            "Rank dossiers by a weighted lexical score: signature-term "
+            "overlap counts DOUBLE (the failure signature is the retrieval "
+            "key), task-term overlap counts single, and each confirmed fix "
+            f"adds 1 point up to a cap of {CONFIRMED_BOOST_CAP}. Ties break "
+            "by confirmed fixes, then dossier id. This is still keyword "
+            "overlap, NOT semantic similarity: no embeddings, no model calls, "
+            "no magic. It finds dossiers that talk about the same things, "
+            "weighted toward the parts of a dossier written to be matched on "
+            "and toward dossiers with a track record."
         ),
     )
     p_recall.add_argument("--task", required=True, help="describe the current task")
     p_recall.add_argument("--dir", default="dossiers", help="dossier directory")
     p_recall.add_argument("--top", type=int, default=3, help="how many to show (default 3)")
+    p_recall.add_argument("--class", dest="failure_class",
+                          choices=D.VALID_FAILURE_CLASSES, default=None,
+                          help="only consider dossiers of this failure class")
     p_recall.set_defaults(func=cmd_recall)
 
     p_list = sub.add_parser("list", help="compact table of dossiers")

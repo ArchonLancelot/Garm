@@ -1,15 +1,17 @@
 ---
-dossier_version: "0.1"
+dossier_version: "0.2"
 id: 2026-10-07-flaky-checkout-race
 created: 2026-10-07
 agent: claude-code
 task: "Fix flaky test_checkout_total in the storefront test suite"
 outcome: failed
+failure_class: reasoning-error
+confirmed_fixes: 0
 ---
 
 # Failure dossier: Fix flaky test_checkout_total in the storefront test suite
 
-> **Illustrative example** — synthetic, written to demonstrate the v0.1 format.
+> **Illustrative example** — synthetic, written to demonstrate the v0.2 format.
 > Not a real session. Numbers below are plausible estimates, not measurements.
 
 ## What was tried
