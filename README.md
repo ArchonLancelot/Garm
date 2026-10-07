@@ -1,13 +1,15 @@
-# Autopsy — v0.2
+# Garm — v0.2
 
 **Your agent stops making the same mistake twice.**
+
+Named for Garm, the hound at Hel's gate — nothing gets past him twice.
 
 A hand-operated failure memory for coding agents. When a session fails a
 certain way, the autopsy gets written down — root cause, the reusable
 pattern, what would have avoided it — so the next session can read it
 *before* it starts generating.
 
-Mem0 remembers your name. Autopsy remembers why you failed.
+Mem0 remembers your name. Garm remembers why you failed.
 
 ## The three organs
 
@@ -32,7 +34,7 @@ Everything in v0.1, plus what the first real test taught us:
   `knowledge-gap`, `reasoning-error`, `execution-slip`, `tool-misuse`, or
   `misread-task`. Different failures need different fixes; now retrieval
   (`recall --class`) and review can tell them apart.
-- `autopsy confirm <id>` — when a retrieved dossier demonstrably helps a
+- `garm confirm <id>` — when a retrieved dossier demonstrably helps a
   later run, record it. Confirmed dossiers rank higher in recall. This is
   the start of the experience flywheel: the bank learns which autopsies
   earn their keep.
@@ -72,24 +74,24 @@ your wrong conclusion verbatim, never put the answer in the dossier.
 
 ```bash
 # 1. Scaffold a dossier for a failed task (class is required — pick honestly)
-python3 -m autopsy init --task "Fix flaky checkout test" --agent claude-code \
+python3 -m garm init --task "Fix flaky checkout test" --agent claude-code \
     --class reasoning-error -o dossiers
 
 # 2. Fill in the sections, then validate it (the filename includes today's date)
-python3 -m autopsy validate dossiers/*-fix-flaky-checkout-test.md
+python3 -m garm validate dossiers/*-fix-flaky-checkout-test.md
 
 # 3. Rebuild the index
-python3 -m autopsy index --dir dossiers
+python3 -m garm index --dir dossiers
 
 # 4. Retrieve before your next run
-python3 -m autopsy recall --task "checkout test fails intermittently" --dir dossiers
+python3 -m garm recall --task "checkout test fails intermittently" --dir dossiers
 
 # 5. When a retrieved dossier demonstrably helps a later run, confirm it
-python3 -m autopsy confirm <dossier-id> --dir dossiers
-python3 -m autopsy index --dir dossiers   # refresh after confirming
+python3 -m garm confirm <dossier-id> --dir dossiers
+python3 -m garm index --dir dossiers   # refresh after confirming
 
 # 6. See everything you have
-python3 -m autopsy list --dir dossiers
+python3 -m garm list --dir dossiers
 
 # Run the test suite
 python3 -m unittest discover -s tests -t .

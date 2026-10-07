@@ -1,4 +1,4 @@
-# QA checklist — Autopsy v0.2
+# QA checklist — Garm v0.2
 
 Standing rule: nothing ships untested. Run this whole list before any release
 tag or public push. Check each box only after verifying, not before.
@@ -15,7 +15,7 @@ tag or public push. Check each box only after verifying, not before.
 
 ## CLI
 
-- [ ] `python3 -m autopsy --help` lists all six commands with accurate
+- [ ] `python3 -m garm --help` lists all six commands with accurate
       one-line descriptions.
 - [ ] `init` requires `--class` (exits 2 without it) and scaffolds a dossier:
       file created, frontmatter prefilled (version 0.2, id, ISO date, agent,
@@ -59,11 +59,14 @@ tag or public push. Check each box only after verifying, not before.
 ## Hygiene
 
 - [ ] No TODOs, placeholders, FIXME, or dead code:
-      `grep -riE "todo|fixme|placeholder|XXX" --include="*.py" autopsy/ tests/`
+      `grep -riE "todo|fixme|placeholder|XXX" --include="*.py" garm/ tests/`
       returns nothing (excluding this checklist's own mention).
-- [ ] Stdlib only: `grep -rE "^import |^from " autopsy/` shows no
+- [ ] Stdlib only: `grep -rE "^import |^from " garm/` shows no
       third-party imports.
 - [ ] No secrets, keys, or personal data in the tree.
+- [ ] No stale product-name references: `grep -rn "Autopsy" --include="*.py"
+      --include="*.md" .` returns nothing (`autopsy` lowercase survives only
+      as generic prose — "failure autopsy", "auto-autopsy").
 
 ## When something slips through
 

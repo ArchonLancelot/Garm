@@ -11,13 +11,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from autopsy import dossier as D  # noqa: E402
+from garm import dossier as D  # noqa: E402
 
 
-def autopsy(*args, cwd):
+def garm(*args, cwd):
     env = dict(os.environ, PYTHONPATH=str(ROOT))
     return subprocess.run(
-        [sys.executable, "-m", "autopsy", *args],
+        [sys.executable, "-m", "garm", *args],
         cwd=cwd, capture_output=True, text=True, env=env,
     )
 
@@ -56,7 +56,7 @@ class ValidateTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             bad = Path(tmp) / "bad.md"
             write_dossier(bad, drop_section="root cause")
-            r = autopsy("validate", str(bad), cwd=tmp)
+            r = garm("validate", str(bad), cwd=tmp)
             self.assertEqual(r.returncode, 1)
             self.assertIn("root cause", r.stdout.lower())
 
@@ -64,7 +64,7 @@ class ValidateTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             bad = Path(tmp) / "bad.md"
             bad.write_text("## What was tried\nSomething.\n", encoding="utf-8")
-            r = autopsy("validate", str(bad), cwd=tmp)
+            r = garm("validate", str(bad), cwd=tmp)
             self.assertEqual(r.returncode, 1)
             self.assertIn("frontmatter", r.stdout.lower())
 
@@ -74,7 +74,7 @@ class ValidateTest(unittest.TestCase):
             text = D.render_template(task="T", agent="a", sections=FULL_SECTIONS)
             text = text.replace("outcome: failed", "outcome: exploded")
             p.write_text(text, encoding="utf-8")
-            r = autopsy("validate", str(p), cwd=tmp)
+            r = garm("validate", str(p), cwd=tmp)
             self.assertEqual(r.returncode, 1)
             self.assertIn("outcome", r.stdout.lower())
 
@@ -82,7 +82,7 @@ class ValidateTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             p = Path(tmp) / "good.md"
             write_dossier(p)
-            r = autopsy("validate", str(p), cwd=tmp)
+            r = garm("validate", str(p), cwd=tmp)
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             self.assertIn("OK", r.stdout)
 

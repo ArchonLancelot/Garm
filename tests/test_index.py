@@ -10,13 +10,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from autopsy import dossier as D  # noqa: E402
+from garm import dossier as D  # noqa: E402
 
 
-def autopsy(*args, cwd):
+def garm(*args, cwd):
     env = dict(os.environ, PYTHONPATH=str(ROOT))
     return subprocess.run(
-        [sys.executable, "-m", "autopsy", *args],
+        [sys.executable, "-m", "garm", *args],
         cwd=cwd, capture_output=True, text=True, env=env,
     )
 
@@ -42,12 +42,12 @@ class IndexTest(unittest.TestCase):
                                       sections=SECTIONS),
                     encoding="utf-8",
                 )
-            r = autopsy("index", "--dir", "dossiers", cwd=tmp)
+            r = garm("index", "--dir", "dossiers", cwd=tmp)
             self.assertEqual(r.returncode, 0, r.stderr)
             index_path = d / "index.jsonl"
             first = index_path.read_bytes()
 
-            r = autopsy("index", "--dir", "dossiers", cwd=tmp)
+            r = garm("index", "--dir", "dossiers", cwd=tmp)
             self.assertEqual(r.returncode, 0, r.stderr)
             second = index_path.read_bytes()
 

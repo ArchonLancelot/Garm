@@ -11,7 +11,7 @@ outcome: failed
 
 ## What was tried
 - Ran a subagent to measure token waste from repeated failed tool calls in 400 failed OpenHands trajectories; got 91.5% repeat rate, ~7% billed waste, ~118K tokens/run.
-- Reported the headline to Armando in chat and shipped a benchmark writeup draft leading with it.
+- Reported the headline in chat and shipped a benchmark writeup draft leading with it.
 - A day later, pasted Claude Sonnet 5.5's methodological review into the analysis; re-ran with fixes (baseline on resolved runs, intervening-write exclusion, regex precision check, median+CI).
 - Corrected numbers: 9.75% failed vs 5.0% resolved, median waste 0.00%, mean 111 tokens. Withdrew the headline before anything was published.
 

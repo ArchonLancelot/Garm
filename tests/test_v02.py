@@ -10,13 +10,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from autopsy import dossier as D  # noqa: E402
+from garm import dossier as D  # noqa: E402
 
 
-def autopsy(*args, cwd):
+def garm(*args, cwd):
     env = dict(os.environ, PYTHONPATH=str(ROOT))
     return subprocess.run(
-        [sys.executable, "-m", "autopsy", *args],
+        [sys.executable, "-m", "garm", *args],
         cwd=cwd, capture_output=True, text=True, env=env,
     )
 
@@ -52,20 +52,20 @@ def dossier_id(path: Path) -> str:
 class InitClassTest(unittest.TestCase):
     def test_init_requires_class(self):
         with tempfile.TemporaryDirectory() as tmp:
-            r = autopsy("init", "--task", "T", "--agent", "a",
+            r = garm("init", "--task", "T", "--agent", "a",
                         "-o", "dossiers", cwd=tmp)
             self.assertEqual(r.returncode, 2, r.stderr)
 
     def test_init_rejects_bad_class(self):
         with tempfile.TemporaryDirectory() as tmp:
-            r = autopsy("init", "--task", "T", "--agent", "a",
+            r = garm("init", "--task", "T", "--agent", "a",
                         "--class", "vibes", "-o", "dossiers", cwd=tmp)
             self.assertEqual(r.returncode, 2)
             self.assertIn("knowledge-gap", r.stderr)
 
     def test_init_scaffold_is_valid_v02(self):
         with tempfile.TemporaryDirectory() as tmp:
-            r = autopsy("init", "--task", "Some task", "--agent", "claude-code",
+            r = garm("init", "--task", "Some task", "--agent", "claude-code",
                         "--class", "knowledge-gap", "-o", "dossiers", cwd=tmp)
             self.assertEqual(r.returncode, 0, r.stderr)
             p = Path(tmp) / r.stdout.strip()
@@ -73,7 +73,7 @@ class InitClassTest(unittest.TestCase):
             self.assertEqual(fm["dossier_version"], "0.2")
             self.assertEqual(fm["failure_class"], "knowledge-gap")
             self.assertEqual(fm["confirmed_fixes"], "0")
-            r = autopsy("validate", str(p), cwd=tmp)
+            r = garm("validate", str(p), cwd=tmp)
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
 
@@ -84,7 +84,7 @@ class ValidateV02Test(unittest.TestCase):
             text = p.read_text(encoding="utf-8").replace(
                 "failure_class: reasoning-error", "failure_class: vibes")
             p.write_text(text, encoding="utf-8")
-            r = autopsy("validate", str(p), cwd=tmp)
+            r = garm("validate", str(p), cwd=tmp)
             self.assertEqual(r.returncode, 1)
             self.assertIn("failure_class", r.stdout)
 
@@ -94,7 +94,7 @@ class ValidateV02Test(unittest.TestCase):
             text = p.read_text(encoding="utf-8").replace(
                 "confirmed_fixes: 0", "confirmed_fixes: -1")
             p.write_text(text, encoding="utf-8")
-            r = autopsy("validate", str(p), cwd=tmp)
+            r = garm("validate", str(p), cwd=tmp)
             self.assertEqual(r.returncode, 1)
             self.assertIn("confirmed_fixes", r.stdout)
 
@@ -104,7 +104,7 @@ class ValidateV02Test(unittest.TestCase):
             lines = [ln for ln in p.read_text(encoding="utf-8").splitlines()
                      if not ln.startswith("failure_class:")]
             p.write_text("\n".join(lines) + "\n", encoding="utf-8")
-            r = autopsy("validate", str(p), cwd=tmp)
+            r = garm("validate", str(p), cwd=tmp)
             self.assertEqual(r.returncode, 1)
             self.assertIn("failure_class", r.stdout)
 
@@ -119,7 +119,7 @@ class ValidateV02Test(unittest.TestCase):
                     ln = 'dossier_version: "0.1"'
                 lines.append(ln)
             p.write_text("\n".join(lines) + "\n", encoding="utf-8")
-            r = autopsy("validate", str(p), cwd=tmp)
+            r = garm("validate", str(p), cwd=tmp)
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             self.assertIn("OK", r.stdout)
             self.assertIn("legacy", r.stderr.lower())
@@ -135,18 +135,18 @@ class ConfirmTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             p = make_dossier(tmp, "d.md", "Task one")
             did = dossier_id(p)
-            r = autopsy("confirm", did, "--dir", "dossiers", cwd=tmp)
+            r = garm("confirm", did, "--dir", "dossiers", cwd=tmp)
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertIn("confirmed fixes: 1", r.stdout)
-            r = autopsy("confirm", did, "--dir", "dossiers", cwd=tmp)
+            r = garm("confirm", did, "--dir", "dossiers", cwd=tmp)
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertIn("confirmed fixes: 2", r.stdout)
             text = p.read_text(encoding="utf-8")
             self.assertIn("confirmed_fixes: 2", text)
-            r = autopsy("validate", str(p), cwd=tmp)
+            r = garm("validate", str(p), cwd=tmp)
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             # index picks up the new count
-            r = autopsy("index", "--dir", "dossiers", cwd=tmp)
+            r = garm("index", "--dir", "dossiers", cwd=tmp)
             self.assertEqual(r.returncode, 0, r.stderr)
             entries = D.load_index_entries(Path(tmp) / "dossiers" / "index.jsonl")
             self.assertEqual(entries[0]["confirmed_fixes"], 2)
@@ -154,7 +154,7 @@ class ConfirmTest(unittest.TestCase):
     def test_confirm_unknown_id_fails(self):
         with tempfile.TemporaryDirectory() as tmp:
             make_dossier(tmp, "d.md", "Task one")
-            r = autopsy("confirm", "no-such-id", "--dir", "dossiers", cwd=tmp)
+            r = garm("confirm", "no-such-id", "--dir", "dossiers", cwd=tmp)
             self.assertEqual(r.returncode, 1)
             self.assertIn("no dossier", r.stderr)
 
@@ -163,7 +163,7 @@ class ConfirmTest(unittest.TestCase):
             p = make_dossier(tmp, "a.md", "Task one")
             (Path(tmp) / "dossiers" / "b.md").write_text(
                 p.read_text(encoding="utf-8"), encoding="utf-8")
-            r = autopsy("confirm", dossier_id(p), "--dir", "dossiers", cwd=tmp)
+            r = garm("confirm", dossier_id(p), "--dir", "dossiers", cwd=tmp)
             self.assertEqual(r.returncode, 1)
             self.assertIn("multiple", r.stderr)
 
@@ -175,7 +175,7 @@ class RecallV02Test(unittest.TestCase):
                          signature="sig-key: checkout flaky race parallel workers.")
             make_dossier(tmp, "b.md", "checkout flaky race parallel workers investigation",
                          signature="sig-key: unrelated widgets deployment habits.")
-            r = autopsy("recall", "--task", "checkout flaky race parallel workers",
+            r = garm("recall", "--task", "checkout flaky race parallel workers",
                         "--dir", "dossiers", "--top", "2", cwd=tmp)
             self.assertEqual(r.returncode, 0, r.stderr)
             lines = [ln for ln in r.stdout.splitlines() if ln.strip()]
@@ -186,9 +186,9 @@ class RecallV02Test(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             a = make_dossier(tmp, "a.md", "widgets deploy")
             make_dossier(tmp, "b.md", "the widgets deploy")
-            r = autopsy("confirm", dossier_id(a), "--dir", "dossiers", cwd=tmp)
+            r = garm("confirm", dossier_id(a), "--dir", "dossiers", cwd=tmp)
             self.assertEqual(r.returncode, 0, r.stderr)
-            r = autopsy("recall", "--task", "widgets deploy",
+            r = garm("recall", "--task", "widgets deploy",
                         "--dir", "dossiers", "--top", "2", cwd=tmp)
             self.assertEqual(r.returncode, 0, r.stderr)
             lines = [ln for ln in r.stdout.splitlines() if ln.strip()]
@@ -199,7 +199,7 @@ class RecallV02Test(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             make_dossier(tmp, "a.md", "Task alpha gamma", failure_class="knowledge-gap")
             make_dossier(tmp, "b.md", "Task alpha gamma delta", failure_class="reasoning-error")
-            r = autopsy("recall", "--task", "alpha gamma", "--class", "knowledge-gap",
+            r = garm("recall", "--task", "alpha gamma", "--class", "knowledge-gap",
                         "--dir", "dossiers", "--top", "5", cwd=tmp)
             self.assertEqual(r.returncode, 0, r.stderr)
             lines = [ln for ln in r.stdout.splitlines() if ln.strip()]
@@ -211,7 +211,7 @@ class IndexV02Test(unittest.TestCase):
     def test_index_carries_new_fields(self):
         with tempfile.TemporaryDirectory() as tmp:
             make_dossier(tmp, "d.md", "Task one", failure_class="tool-misuse")
-            r = autopsy("index", "--dir", "dossiers", cwd=tmp)
+            r = garm("index", "--dir", "dossiers", cwd=tmp)
             self.assertEqual(r.returncode, 0, r.stderr)
             entries = D.load_index_entries(Path(tmp) / "dossiers" / "index.jsonl")
             self.assertEqual(len(entries), 1)
@@ -229,9 +229,9 @@ class ListV02Test(unittest.TestCase):
     def test_list_shows_class_and_fixes(self):
         with tempfile.TemporaryDirectory() as tmp:
             p = make_dossier(tmp, "d.md", "Task one", failure_class="knowledge-gap")
-            r = autopsy("confirm", dossier_id(p), "--dir", "dossiers", cwd=tmp)
+            r = garm("confirm", dossier_id(p), "--dir", "dossiers", cwd=tmp)
             self.assertEqual(r.returncode, 0, r.stderr)
-            r = autopsy("list", "--dir", "dossiers", cwd=tmp)
+            r = garm("list", "--dir", "dossiers", cwd=tmp)
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertIn("knowledge-gap", r.stdout)
             header, row = r.stdout.splitlines()[0], r.stdout.splitlines()[1]

@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class RecallHelpTest(unittest.TestCase):
     def test_help_states_keyword_overlap_not_semantic(self):
         r = subprocess.run(
-            [sys.executable, "-m", "autopsy", "recall", "--help"],
+            [sys.executable, "-m", "garm", "recall", "--help"],
             cwd=ROOT, capture_output=True, text=True,
         )
         self.assertEqual(r.returncode, 0)
@@ -21,7 +21,7 @@ class RecallHelpTest(unittest.TestCase):
 
     def test_top_level_help_lists_all_commands(self):
         r = subprocess.run(
-            [sys.executable, "-m", "autopsy", "--help"],
+            [sys.executable, "-m", "garm", "--help"],
             cwd=ROOT, capture_output=True, text=True,
         )
         self.assertEqual(r.returncode, 0)

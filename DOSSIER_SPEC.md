@@ -1,4 +1,4 @@
-# Dossier format spec — v0.2 (Autopsy)
+# Dossier format spec — v0.2 (Garm)
 
 A **dossier** is one hand-written failure autopsy: a Markdown file with a
 small frontmatter block and fixed `##` sections. The analysis inside is
@@ -7,7 +7,7 @@ written by the agent (or human) using the tool. The tool only enforces
 
 v0.2 adds two frontmatter fields: `failure_class` (what *kind* of failure
 this was — required) and `confirmed_fixes` (how many later runs a retrieved
-dossier demonstrably helped — starts at 0, bumped with `autopsy confirm`).
+dossier demonstrably helped — starts at 0, bumped with `garm confirm`).
 v0.1 dossiers remain valid; they are treated as legacy and simply lack the
 new fields.
 
@@ -74,8 +74,8 @@ Counts the later runs a retrieved dossier demonstrably helped. Written as
 `confirmed_fixes: 0` on new dossiers; bumped with:
 
 ```bash
-python3 -m autopsy confirm <dossier-id> --dir dossiers
-python3 -m autopsy index --dir dossiers   # refresh the index afterwards
+python3 -m garm confirm <dossier-id> --dir dossiers
+python3 -m garm index --dir dossiers   # refresh the index afterwards
 ```
 
 Use `confirm` when a retrieved dossier changed what a run did and the run
@@ -114,19 +114,19 @@ Optional:
    one-line method note. Optional because honest estimates aren't always
    available; never invent one.
 
-Validation (`autopsy validate`) checks exactly the table and list above —
+Validation (`garm validate`) checks exactly the table and list above —
 nothing more. A dossier that passes validation is *structurally* sound; the
 truth of its analysis is the author's responsibility.
 
 ## index.jsonl
 
-Derived file, rebuilt any time with `autopsy index --dir <dir>`. One JSON
+Derived file, rebuilt any time with `garm index --dir <dir>`. One JSON
 object per line, sorted by `id`:
 
 ```json
 {"id": "2026-10-07-flaky-checkout-race", "version": "0.2", "task": "Fix flaky test_checkout_total in the storefront test suite", "signature": "Name: flaky-test-chased-as-code-bug", "keywords": ["fix", "flaky", "test", "checkout", "total", "storefront", "suite", "name", "chased", "code", "bug", "match", "rule", "..."], "sig_keywords": ["name", "flaky", "test", "chased", "code", "bug", "match", "rule", "..."], "failure_class": "reasoning-error", "confirmed_fixes": 2, "outcome": "failed", "path": "examples/flaky-checkout-race.md", "created": "2026-10-07"}
 ```
-(real output from `autopsy index`; `"..."` abbreviates the full keyword list)
+(real output from `garm index`; `"..."` abbreviates the full keyword list)
 
 Fields:
 
@@ -149,7 +149,7 @@ losing anything. Rebuilding is byte-identical for unchanged input.
 
 ## Retrieval ranking (v0.2)
 
-`autopsy recall` scores each dossier as:
+`garm recall` scores each dossier as:
 
 ```
 score = 2 × (query ∩ sig_keywords) + 1 × (query ∩ task_keywords) + min(confirmed_fixes, 5)
@@ -189,5 +189,5 @@ fix traced to a dossier, zero regressions):
    fixes. A mislabeled dossier retrieves in the wrong context and teaches
    the wrong lesson.
 4. **Confirm the ones that work.** When a retrieved dossier changes a run
-   for the better, run `autopsy confirm`. An unconfirmed bank is a pile of
+   for the better, run `garm confirm`. An unconfirmed bank is a pile of
    claims; a confirmed bank is a track record.

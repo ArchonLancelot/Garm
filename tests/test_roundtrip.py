@@ -14,13 +14,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from autopsy import dossier as D  # noqa: E402
+from garm import dossier as D  # noqa: E402
 
 
-def autopsy(*args, cwd):
+def garm(*args, cwd):
     env = dict(os.environ, PYTHONPATH=str(ROOT))
     return subprocess.run(
-        [sys.executable, "-m", "autopsy", *args],
+        [sys.executable, "-m", "garm", *args],
         cwd=cwd, capture_output=True, text=True, env=env,
     )
 
@@ -65,14 +65,14 @@ def fill_dossier(path: Path, task: str, agent: str, sections: dict) -> None:
 class RoundTripTest(unittest.TestCase):
     def test_init_validate_index_recall(self):
         with tempfile.TemporaryDirectory() as tmp:
-            r = autopsy("init", "--task", TASK_A, "--agent", "claude-code",
+            r = garm("init", "--task", TASK_A, "--agent", "claude-code",
                         "--class", "reasoning-error",
                         "-o", "dossiers", cwd=tmp)
             self.assertEqual(r.returncode, 0, r.stderr)
             path_a = Path(tmp) / r.stdout.strip()
             self.assertTrue(path_a.is_file())
 
-            r = autopsy("init", "--task", TASK_B, "--agent", "claude-code",
+            r = garm("init", "--task", TASK_B, "--agent", "claude-code",
                         "--class", "tool-misuse",
                         "-o", "dossiers", cwd=tmp)
             self.assertEqual(r.returncode, 0, r.stderr)
@@ -82,17 +82,17 @@ class RoundTripTest(unittest.TestCase):
             fill_dossier(path_b, TASK_B, "claude-code", SECTIONS_B)
 
             for p in (path_a, path_b):
-                r = autopsy("validate", str(p), cwd=tmp)
+                r = garm("validate", str(p), cwd=tmp)
                 self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
                 self.assertIn("OK", r.stdout)
 
-            r = autopsy("index", "--dir", "dossiers", cwd=tmp)
+            r = garm("index", "--dir", "dossiers", cwd=tmp)
             self.assertEqual(r.returncode, 0, r.stderr)
             index_path = Path(tmp) / "dossiers" / "index.jsonl"
             self.assertTrue(index_path.is_file())
             self.assertEqual(len(index_path.read_text().strip().splitlines()), 2)
 
-            r = autopsy("recall", "--task",
+            r = garm("recall", "--task",
                         "checkout test flaky intermittent parallel workers race",
                         "--dir", "dossiers", "--top", "2", cwd=tmp)
             self.assertEqual(r.returncode, 0, r.stderr)
