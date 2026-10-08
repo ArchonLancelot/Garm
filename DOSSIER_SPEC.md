@@ -1,4 +1,4 @@
-# Dossier format spec — v0.2 (Garm)
+# Dossier format spec — v0.2.1 (Garm)
 
 A **dossier** is one hand-written failure autopsy: a Markdown file with a
 small frontmatter block and fixed `##` sections. The analysis inside is
@@ -8,6 +8,9 @@ written by the agent (or human) using the tool. The tool only enforces
 v0.2 adds two frontmatter fields: `failure_class` (what *kind* of failure
 this was — required) and `confirmed_fixes` (how many later runs a retrieved
 dossier demonstrably helped — starts at 0, bumped with `garm confirm`).
+v0.2.1 adds `confirmed_insights` (how many times a dossier's analysis
+generated a new approach — starts at 0, bumped with `garm confirm
+--insight`; the signal for open-ended work with no verifiable "fix").
 v0.1 dossiers remain valid; they are treated as legacy and simply lack the
 new fields.
 
@@ -23,6 +26,7 @@ task: "Fix flaky test_checkout_total in the storefront test suite"
 outcome: failed
 failure_class: reasoning-error
 confirmed_fixes: 0
+confirmed_insights: 0
 ---
 
 # Failure dossier: Fix flaky test_checkout_total in the storefront test suite
@@ -46,6 +50,7 @@ confirmed_fixes: 0
 | `outcome` | yes | `failed` or `recovered` |
 | `failure_class` | yes for v0.2 | one of the five classes below |
 | `confirmed_fixes` | no | non-negative integer, default 0 |
+| `confirmed_insights` | no | non-negative integer, default 0 |
 
 `outcome: recovered` is for sessions that hit the wall and got past it — the
 autopsy is still worth keeping.
@@ -68,21 +73,30 @@ When torn between `knowledge-gap` and `reasoning-error`, ask: would handing
 the agent a textbook page have fixed it? Yes → `knowledge-gap`. No, it had
 the page and still went wrong → `reasoning-error`.
 
-## confirmed_fixes
+## confirmed_fixes / confirmed_insights
 
-Counts the later runs a retrieved dossier demonstrably helped. Written as
-`confirmed_fixes: 0` on new dossiers; bumped with:
+Two counters track whether dossiers earn their keep. Written as `0` on new
+dossiers; bumped with:
 
 ```bash
-python3 -m garm confirm <dossier-id> --dir dossiers
+python3 -m garm confirm <dossier-id> --dir dossiers            # a fix
+python3 -m garm confirm <dossier-id> --insight --dir dossiers   # an insight
 python3 -m garm index --dir dossiers   # refresh the index afterwards
 ```
 
-Use `confirm` when a retrieved dossier changed what a run did and the run
-then succeeded (or avoided the documented failure). Don't confirm on vibes —
-the counter is the dossier bank's track record, and `recall` boosts confirmed
-dossiers. A dossier with 5 confirmed fixes has earned more trust than one
-with 0; the cap keeps one veteran from swamping new dossiers forever.
+- `confirmed_fixes`: the dossier prevented a specific repeat / fixed a
+  verifiable failure. Use `confirm` when a retrieved dossier changed what a
+  run did and the run then succeeded (or avoided the documented failure).
+- `confirmed_insights`: the dossier's analysis *generated a new approach* —
+  its blocking constraint, inverted, became the next idea. Use `confirm
+  --insight` for open-ended work where there is no verifiable "fix" to
+  count, but the dossier still moved the work forward.
+
+Don't confirm on vibes — the counters are the dossier bank's track record,
+and `recall` boosts confirmed dossiers (each counter adds up to 5 points,
+capped separately). A dossier with confirmed fixes or insights has earned
+more trust than one with 0; the caps keep one veteran from swamping new
+dossiers forever.
 
 ## Version policy
 
@@ -140,6 +154,7 @@ Fields:
 | `sig_keywords` | lexical keywords from the failure signature alone (the retrieval key) |
 | `failure_class` | frontmatter class, or null for legacy v0.1 dossiers |
 | `confirmed_fixes` | frontmatter counter (0 if absent) |
+| `confirmed_insights` | frontmatter counter (0 if absent) |
 | `outcome` | `failed` or `recovered` |
 | `path` | dossier path relative to the indexed directory |
 | `created` | ISO date from frontmatter |
@@ -147,12 +162,13 @@ Fields:
 Because it is fully derived, `index.jsonl` can be deleted and rebuilt without
 losing anything. Rebuilding is byte-identical for unchanged input.
 
-## Retrieval ranking (v0.2)
+## Retrieval ranking (v0.2.1)
 
 `garm recall` scores each dossier as:
 
 ```
-score = 2 × (query ∩ sig_keywords) + 1 × (query ∩ task_keywords) + min(confirmed_fixes, 5)
+score = 2 × (query ∩ sig_keywords) + 1 × (query ∩ task_keywords)
+      + min(confirmed_fixes, 5) + min(confirmed_insights, 5)
 ```
 
 Signature terms count double because the failure signature is the retrieval

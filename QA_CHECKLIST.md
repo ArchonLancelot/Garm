@@ -19,21 +19,25 @@ tag or public push. Check each box only after verifying, not before.
       one-line descriptions.
 - [ ] `init` requires `--class` (exits 2 without it) and scaffolds a dossier:
       file created, frontmatter prefilled (version 0.2, id, ISO date, agent,
-      task, outcome, failure_class, confirmed_fixes: 0).
+      task, outcome, failure_class, confirmed_fixes: 0, confirmed_insights: 0).
 - [ ] `init` rejects an invalid `--class` with the valid choices listed.
 - [ ] `validate` passes a good v0.2 dossier, rejects a bad `failure_class`
-      and a negative `confirmed_fixes`, with clear messages; exit codes 0/1.
+      and a negative `confirmed_fixes` / `confirmed_insights`, with clear
+      messages; exit codes 0/1.
 - [ ] `confirm <id>` increments `confirmed_fixes`, keeps the file valid,
       errors clearly on unknown/duplicate ids; re-running `index` shows the
       new count.
+- [ ] `confirm <id> --insight` increments `confirmed_insights` independently
+      of `confirmed_fixes`; both survive `validate` and appear in `index`,
+      `recall`, and `list`.
 - [ ] `index` rebuilds `index.jsonl`; running it twice is byte-identical;
       entries carry `version`, `failure_class`, `confirmed_fixes`,
-      `sig_keywords`.
+      `confirmed_insights`, `sig_keywords`.
 - [ ] `recall` ranks the signature-overlapping dossier top-1; a confirmed
-      dossier outranks an otherwise identical unconfirmed one;
-      `--class` filters; `--help` documents the scoring formula and states
-      plainly the ranking is NOT semantic.
-- [ ] `list` prints a compact table including class and confirmed-fix counts.
+      dossier outranks an otherwise identical unconfirmed one (both fix and
+      insight confirms boost); `--class` filters; `--help` documents the
+      scoring formula and states plainly the ranking is NOT semantic.
+- [ ] `list` prints a compact table including class, fix, and insight counts.
 
 ## Tests
 
@@ -59,14 +63,26 @@ tag or public push. Check each box only after verifying, not before.
 ## Hygiene
 
 - [ ] No TODOs, placeholders, FIXME, or dead code:
-      `grep -riE "todo|fixme|placeholder|XXX" --include="*.py" garm/ tests/`
+      `grep -riE "todo|fixme|placeholder|XXX" --include="*.py" garm/ tests/ plugins/`
       returns nothing (excluding this checklist's own mention).
-- [ ] Stdlib only: `grep -rE "^import |^from " garm/` shows no
-      third-party imports.
+- [ ] Stdlib only: `grep -rE "^import |^from " garm/ plugins/garm/hooks/`
+      shows no third-party imports.
 - [ ] No secrets, keys, or personal data in the tree.
 - [ ] No stale product-name references: `grep -rn "Autopsy" --include="*.py"
       --include="*.md" .` returns nothing (`autopsy` lowercase survives only
       as generic prose — "failure autopsy", "auto-autopsy").
+
+## v1 plugin (plugins/garm/)
+
+- [ ] `plugin.json` and `hooks/hooks.json` are valid JSON with the required keys.
+- [ ] `python3 -m unittest discover -s plugins/garm/tests` — all green.
+- [ ] Hook never exits nonzero and never prints diagnostics to stdout
+      (covered by tests: malformed stdin, missing dir, broken GARM_BIN).
+- [ ] End-to-end: real dossier dir + matching prompt yields the
+      `hookSpecificOutput` envelope with the dossier's "what retrieval would
+      have changed"; non-matching prompt yields empty stdout.
+- [ ] `/garm:autopsy` command file has valid frontmatter and the commands it
+      tells the agent to run actually work (init/validate/index/confirm).
 
 ## When something slips through
 

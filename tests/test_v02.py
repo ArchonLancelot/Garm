@@ -158,6 +158,50 @@ class ConfirmTest(unittest.TestCase):
             self.assertEqual(r.returncode, 1)
             self.assertIn("no dossier", r.stderr)
 
+    def test_confirm_insight_increments_separately(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = make_dossier(tmp, "d.md", "Task one")
+            did = dossier_id(p)
+            r = garm("confirm", did, "--insight", "--dir", "dossiers", cwd=tmp)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn("confirmed insights: 1", r.stdout)
+            r = garm("confirm", did, "--dir", "dossiers", cwd=tmp)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn("confirmed fixes: 1", r.stdout)
+            text = p.read_text(encoding="utf-8")
+            self.assertIn("confirmed_insights: 1", text)
+            self.assertIn("confirmed_fixes: 1", text)
+            r = garm("validate", str(p), cwd=tmp)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            r = garm("index", "--dir", "dossiers", cwd=tmp)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            entries = D.load_index_entries(Path(tmp) / "dossiers" / "index.jsonl")
+            self.assertEqual(entries[0]["confirmed_insights"], 1)
+            self.assertEqual(entries[0]["confirmed_fixes"], 1)
+
+    def test_confirm_insight_boosts_recall(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            a = make_dossier(tmp, "a.md", "widgets deploy")
+            make_dossier(tmp, "b.md", "the widgets deploy")
+            r = garm("confirm", dossier_id(a), "--insight", "--dir", "dossiers", cwd=tmp)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            r = garm("recall", "--task", "widgets deploy",
+                        "--dir", "dossiers", "--top", "2", cwd=tmp)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            lines = [ln for ln in r.stdout.splitlines() if ln.strip()]
+            self.assertIn(dossier_id(a), lines[0])
+            self.assertIn("insight:1", lines[0])
+
+    def test_rejects_negative_confirmed_insights(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = make_dossier(tmp, "d.md", "Task one")
+            text = p.read_text(encoding="utf-8").replace(
+                "confirmed_insights: 0", "confirmed_insights: -1")
+            p.write_text(text, encoding="utf-8")
+            r = garm("validate", str(p), cwd=tmp)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn("confirmed_insights", r.stdout)
+
     def test_confirm_duplicate_id_fails(self):
         with tempfile.TemporaryDirectory() as tmp:
             p = make_dossier(tmp, "a.md", "Task one")
@@ -193,7 +237,7 @@ class RecallV02Test(unittest.TestCase):
             self.assertEqual(r.returncode, 0, r.stderr)
             lines = [ln for ln in r.stdout.splitlines() if ln.strip()]
             self.assertIn(dossier_id(a), lines[0])
-            self.assertIn("confirmed:1", lines[0])
+            self.assertIn("fix:1", lines[0])
 
     def test_class_filter(self):
         with tempfile.TemporaryDirectory() as tmp:

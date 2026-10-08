@@ -7,8 +7,11 @@ does not (and cannot) check whether the analysis is true.
 
 v0.2 adds ``failure_class`` (what kind of failure this was) and
 ``confirmed_fixes`` (how many later runs a retrieved dossier demonstrably
-helped — see ``garm confirm``). v0.1 dossiers still validate; they are
-treated as legacy and simply lack the new fields.
+helped — see ``garm confirm``). v0.2.1 adds ``confirmed_insights``: how many
+times a dossier's analysis *generated a new approach* (blocking constraint
+→ idea), for open-ended work where there is no verifiable "fix" to count.
+v0.1 dossiers still validate; they are treated as legacy and simply lack
+the new fields.
 """
 
 from __future__ import annotations
@@ -20,6 +23,12 @@ from pathlib import Path
 
 DOSSIER_VERSION = "0.2"
 ACCEPTED_VERSIONS = ("0.1", "0.2")
+
+# Confirmable counters. confirmed_fixes: the dossier prevented a specific
+# repeat / fixed a verifiable failure. confirmed_insights: the dossier's
+# analysis generated a new approach (its blocking constraint, inverted,
+# became the next idea) — for open-ended work with no verifiable "fix".
+CONFIRM_FIELDS = ("confirmed_fixes", "confirmed_insights")
 
 REQUIRED_FRONTMATTER_FIELDS = (
     "dossier_version",
@@ -177,18 +186,19 @@ def validate_dossier(path: str | Path) -> list[str]:
                 f"{VALID_FAILURE_CLASSES}"
             )
 
-    # confirmed_fixes is optional in the file; absent means 0. Present must
-    # be a non-negative integer.
-    confirmed_raw = frontmatter.get("confirmed_fixes", "")
-    if confirmed_raw:
-        try:
-            if int(confirmed_raw) < 0:
-                raise ValueError
-        except ValueError:
-            errors.append(
-                f"frontmatter: confirmed_fixes {confirmed_raw!r} must be a "
-                f"non-negative integer"
-            )
+    # confirmed_fixes / confirmed_insights are optional in the file; absent
+    # means 0. Present must be a non-negative integer.
+    for field in CONFIRM_FIELDS:
+        confirmed_raw = frontmatter.get(field, "")
+        if confirmed_raw:
+            try:
+                if int(confirmed_raw) < 0:
+                    raise ValueError
+            except ValueError:
+                errors.append(
+                    f"frontmatter: {field} {confirmed_raw!r} must be a "
+                    f"non-negative integer"
+                )
 
     dossier_id = frontmatter.get("id", "")
     if dossier_id and not _ID_RE.match(dossier_id):
@@ -270,6 +280,7 @@ def render_template(
         f"outcome: {outcome}",
         f"failure_class: {failure_class}",
         "confirmed_fixes: 0",
+        "confirmed_insights: 0",
         "---",
         "",
         f"# Failure dossier: {clean_task}",
@@ -303,6 +314,14 @@ def _confirmed_fixes_of(frontmatter: dict[str, str]) -> int:
         return 0
 
 
+def _confirmed_insights_of(frontmatter: dict[str, str]) -> int:
+    """confirmed_insights as an int; absent or malformed means 0."""
+    try:
+        return max(0, int(frontmatter.get("confirmed_insights", "") or 0))
+    except ValueError:
+        return 0
+
+
 def build_index_entry(dossier_path: Path, base_dir: Path) -> dict:
     """Build one index.jsonl record from a validated dossier file."""
     parsed = read_dossier(dossier_path)
@@ -326,6 +345,7 @@ def build_index_entry(dossier_path: Path, base_dir: Path) -> dict:
         "sig_keywords": sig_keywords,
         "failure_class": fm.get("failure_class") or None,
         "confirmed_fixes": _confirmed_fixes_of(fm),
+        "confirmed_insights": _confirmed_insights_of(fm),
         "outcome": fm["outcome"],
         "path": str(dossier_path.relative_to(base_dir)),
         "created": fm["created"],
@@ -341,19 +361,31 @@ def load_index_entries(index_path: Path) -> list[dict]:
     return entries
 
 
-_CONFIRMED_RE = re.compile(r'^confirmed_fixes:\s*"?(\d+)"?\s*$')
+_CONFIRMED_RE = re.compile(r'^(confirmed_fixes|confirmed_insights):\s*"?(\d+)"?\s*$')
 
 
-def confirm_dossier(base_dir: str | Path, dossier_id: str) -> tuple[Path, int]:
-    """Record that a retrieved dossier demonstrably helped a later run.
+def confirm_dossier(
+    base_dir: str | Path, dossier_id: str, field: str = "confirmed_fixes"
+) -> tuple[Path, int]:
+    """Record that a retrieved dossier earned its keep in a later run.
 
-    Finds the dossier whose frontmatter ``id`` matches, increments its
-    ``confirmed_fixes`` counter (adding the field at 1 if absent), rewrites
-    the file, and re-validates it. Returns (path, new_count).
+    ``field`` is ``"confirmed_fixes"`` (default: the dossier prevented a
+    specific repeat / fixed a verifiable failure) or
+    ``"confirmed_insights"`` (the dossier's analysis generated a new
+    approach — for open-ended work with no verifiable "fix").
 
-    Raises ValueError if zero or more than one dossier matches the id.
-    Raises ValueError if the file fails validation after the bump.
+    Finds the dossier whose frontmatter ``id`` matches, increments the
+    counter (adding the field at 1 if absent), rewrites the file, and
+    re-validates it. Returns (path, new_count).
+
+    Raises ValueError if zero or more than one dossier matches the id,
+    if ``field`` is not a known confirm field, or if the file fails
+    validation after the bump.
     """
+    if field not in CONFIRM_FIELDS:
+        raise ValueError(
+            f"unknown confirm field {field!r}; must be one of {CONFIRM_FIELDS}"
+        )
     base = Path(base_dir)
     matches: list[Path] = []
     for md in sorted(base.rglob("*.md")):
@@ -385,13 +417,13 @@ def confirm_dossier(base_dir: str | Path, dossier_id: str) -> tuple[Path, int]:
     replaced = False
     for i in range(1, close_idx):
         match = _CONFIRMED_RE.match(lines[i].strip())
-        if match:
-            new_count = int(match.group(1)) + 1
-            lines[i] = f"confirmed_fixes: {new_count}\n"
+        if match and match.group(1) == field:
+            new_count = int(match.group(2)) + 1
+            lines[i] = f"{field}: {new_count}\n"
             replaced = True
             break
     if not replaced:
-        lines.insert(close_idx, "confirmed_fixes: 1\n")
+        lines.insert(close_idx, f"{field}: 1\n")
     path.write_text("".join(lines), encoding="utf-8")
     errors = validate_dossier(path)
     if errors:

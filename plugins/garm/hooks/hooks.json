@@ -1,0 +1,1 @@
+{"hooks":{"UserPromptSubmit":[{"hooks":[{"command":"${CLAUDE_PLUGIN_ROOT}/hooks/garm_recall.py","timeout":15000,"type":"command"}],"matcher":""}]}}

@@ -1,8 +1,10 @@
 """Command-line interface for Garm, the failure-memory framework. Stdlib only.
 
 v0.2: ``init`` takes a failure class, ``confirm`` records dossiers that
-demonstrably helped a later run, and ``recall`` ranks by weighted overlap
-(signature terms count double) plus a small boost for confirmed dossiers.
+earned their keep, and ``recall`` ranks by weighted overlap (signature
+terms count double) plus a small boost for confirmed dossiers.
+v0.2.1: ``confirm --insight`` records dossiers whose analysis generated a
+new approach — the signal for open-ended work with no verifiable "fix".
 """
 
 from __future__ import annotations
@@ -17,18 +19,21 @@ from . import dossier as D
 
 # Recall scoring: signature-term overlap counts double (the signature is the
 # retrieval key), task-term overlap counts single, and each confirmed fix
-# adds 1 point up to a cap of 5 so one veteran dossier can't swamp new ones.
+# or confirmed insight adds 1 point up to a cap of 5 each, so one veteran
+# dossier can't swamp new ones.
 CONFIRMED_BOOST_CAP = 5
 
 
-def recall_score(query_keys: list[str], entry: dict) -> tuple[int, int, int, int]:
-    """Return (total, sig_overlap, task_overlap, boost) for one index entry."""
+def recall_score(query_keys: list[str], entry: dict) -> tuple[int, int, int, int, int]:
+    """Return (total, sig_overlap, task_overlap, fix_boost, insight_boost)."""
     sig_keys = entry.get("sig_keywords") or []
     task_keys = [k for k in entry.get("keywords", []) if k not in sig_keys]
     sig_overlap = sum(1 for k in query_keys if k in sig_keys)
     task_overlap = sum(1 for k in query_keys if k in task_keys)
-    boost = min(int(entry.get("confirmed_fixes", 0) or 0), CONFIRMED_BOOST_CAP)
-    return 2 * sig_overlap + task_overlap + boost, sig_overlap, task_overlap, boost
+    fix_boost = min(int(entry.get("confirmed_fixes", 0) or 0), CONFIRMED_BOOST_CAP)
+    insight_boost = min(int(entry.get("confirmed_insights", 0) or 0), CONFIRMED_BOOST_CAP)
+    total = 2 * sig_overlap + task_overlap + fix_boost + insight_boost
+    return total, sig_overlap, task_overlap, fix_boost, insight_boost
 
 
 def cmd_init(args: argparse.Namespace) -> int:
@@ -52,18 +57,22 @@ def cmd_init(args: argparse.Namespace) -> int:
 
 
 def cmd_confirm(args: argparse.Namespace) -> int:
-    """Record that dossier <id> demonstrably helped a later run.
+    """Record that dossier <id> earned its keep in a later run.
 
-    Use this when a retrieved dossier changed what a run did and the run
-    then succeeded (or avoided the documented failure). It is the start of
-    the experience flywheel: dossiers that earn their keep rank higher.
+    Default: the dossier prevented a specific repeat / fixed a verifiable
+    failure (increments confirmed_fixes). With --insight: the dossier's
+    analysis generated a new approach — its blocking constraint, inverted,
+    became the next idea (increments confirmed_insights). Use --insight for
+    open-ended work where there is no verifiable "fix" to count.
     """
+    field = "confirmed_insights" if args.insight else "confirmed_fixes"
     try:
-        path, new_count = D.confirm_dossier(args.dir, args.id)
+        path, new_count = D.confirm_dossier(args.dir, args.id, field=field)
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
-    print(f"confirmed: {args.id} (confirmed fixes: {new_count}) [{path}]")
+    label = "confirmed insights" if args.insight else "confirmed fixes"
+    print(f"confirmed: {args.id} ({label}: {new_count}) [{path}]")
     print("hint: run `garm index` to refresh index.jsonl", file=sys.stderr)
     return 0
 
@@ -123,20 +132,21 @@ def cmd_recall(args: argparse.Namespace) -> int:
         entry = D.build_index_entry(md, base)
         if args.failure_class and entry.get("failure_class") != args.failure_class:
             continue
-        total, sig_n, task_n, boost = recall_score(query_keys, entry)
+        total, sig_n, task_n, fix_b, ins_b = recall_score(query_keys, entry)
         overlap = [k for k in query_keys if k in entry["keywords"]]
-        scored.append((total, sig_n, task_n, boost, overlap, entry))
+        scored.append((total, sig_n, task_n, fix_b, ins_b, overlap, entry))
     if not scored:
         print(f"no dossiers found in {base}")
         return 1
-    scored.sort(key=lambda s: (-s[0], -s[5].get("confirmed_fixes", 0), s[5]["id"]))
+    scored.sort(key=lambda s: (-s[0], -(s[3] + s[4]), s[6]["id"]))
     top = max(1, args.top)
-    for total, sig_n, task_n, boost, overlap, entry in scored[:top]:
+    for total, sig_n, task_n, fix_b, ins_b, overlap, entry in scored[:top]:
         matched = ",".join(overlap) if overlap else "-"
         fixes = entry.get("confirmed_fixes", 0)
+        insights = entry.get("confirmed_insights", 0)
         print(f"{total:3d} | {entry['id']} | {entry['task']} "
-              f"[{entry['path']}] (sig:{sig_n} task:{task_n} confirmed:{fixes} "
-              f"matched: {matched})")
+              f"[{entry['path']}] (sig:{sig_n} task:{task_n} fix:{fixes} "
+              f"insight:{insights} matched: {matched})")
     return 0
 
 
@@ -154,6 +164,7 @@ def cmd_list(args: argparse.Namespace) -> int:
             fm["id"],
             fm.get("failure_class") or "-",
             D._confirmed_fixes_of(fm),
+            D._confirmed_insights_of(fm),
             fm["outcome"],
             fm["task"],
         ))
@@ -161,11 +172,11 @@ def cmd_list(args: argparse.Namespace) -> int:
         print(f"no dossiers found in {base}")
         return 0
     rows.sort(key=lambda r: r[0])
-    print(f"{'ID':40} {'CLASS':15} {'FIX':4} {'OUTCOME':9} TASK")
-    for dossier_id, failure_class, fixes, outcome, task in rows:
+    print(f"{'ID':40} {'CLASS':15} {'FIX':4} {'INS':4} {'OUTCOME':9} TASK")
+    for dossier_id, failure_class, fixes, insights, outcome, task in rows:
         task_short = task if len(task) <= 52 else task[:49] + "..."
         print(f"{dossier_id[:40]:40} {failure_class[:15]:15} {fixes:<4} "
-              f"{outcome:9} {task_short}")
+              f"{insights:<4} {outcome:9} {task_short}")
     return 0
 
 
@@ -199,17 +210,24 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_confirm = sub.add_parser(
         "confirm",
-        help="record that a dossier demonstrably helped a later run",
+        help="record that a dossier earned its keep in a later run",
         description=(
-            "Increment a dossier's confirmed_fixes counter. Use it when a "
-            "retrieved dossier changed what a run did and the run then "
-            "succeeded (or avoided the documented failure). Confirmed "
-            "dossiers rank higher in recall — this is how the dossier bank "
-            "learns which autopsies earn their keep. Re-run `index` after."
+            "Increment a dossier's confirm counter. By default this is "
+            "confirmed_fixes: use it when a retrieved dossier prevented a "
+            "specific repeat or fixed a verifiable failure. With --insight, "
+            "it increments confirmed_insights instead: use it when a "
+            "dossier's analysis generated a new approach — its blocking "
+            "constraint, inverted, became the next idea. That's the signal "
+            "for open-ended work where there is no verifiable 'fix' to "
+            "count. Confirmed dossiers rank higher in recall — this is how "
+            "the dossier bank learns which autopsies earn their keep. "
+            "Re-run `index` after."
         ),
     )
     p_confirm.add_argument("id", help="dossier id (frontmatter `id:` value)")
     p_confirm.add_argument("--dir", default="dossiers", help="dossier directory")
+    p_confirm.add_argument("--insight", action="store_true",
+                           help="count a generated approach, not a fixed failure")
     p_confirm.set_defaults(func=cmd_confirm)
 
     p_index = sub.add_parser("index", help="rebuild dossiers/index.jsonl")
@@ -223,12 +241,13 @@ def build_parser() -> argparse.ArgumentParser:
             "Rank dossiers by a weighted lexical score: signature-term "
             "overlap counts DOUBLE (the failure signature is the retrieval "
             "key), task-term overlap counts single, and each confirmed fix "
-            f"adds 1 point up to a cap of {CONFIRMED_BOOST_CAP}. Ties break "
-            "by confirmed fixes, then dossier id. This is still keyword "
-            "overlap, NOT semantic similarity: no embeddings, no model calls, "
-            "no magic. It finds dossiers that talk about the same things, "
-            "weighted toward the parts of a dossier written to be matched on "
-            "and toward dossiers with a track record."
+            "or confirmed insight adds 1 point up to a cap of "
+            f"{CONFIRMED_BOOST_CAP} each. Ties break by total confirms, then "
+            "dossier id. This is still keyword overlap, NOT semantic "
+            "similarity: no embeddings, no model calls, no magic. It finds "
+            "dossiers that talk about the same things, weighted toward the "
+            "parts of a dossier written to be matched on and toward dossiers "
+            "with a track record."
         ),
     )
     p_recall.add_argument("--task", required=True, help="describe the current task")

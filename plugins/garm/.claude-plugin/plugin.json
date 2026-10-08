@@ -1,0 +1,1 @@
+{"author":"ArchonLancelot","description":"Garm failure memory for Claude Code: recalls your past failure autopsies automatically before each prompt (UserPromptSubmit hook), and scaffolds new ones with /garm:autopsy. Stdlib-only, local-only, no model calls.","name":"garm","version":"1.0.0"}

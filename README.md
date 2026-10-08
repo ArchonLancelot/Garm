@@ -1,4 +1,4 @@
-# Garm — v0.2
+# Garm — v1
 
 **Your agent stops making the same mistake twice.**
 
@@ -38,11 +38,30 @@ Everything in v0.1, plus what the first real test taught us:
   later run, record it. Confirmed dossiers rank higher in recall. This is
   the start of the experience flywheel: the bank learns which autopsies
   earn their keep.
+- `garm confirm <id> --insight` (v0.2.1) — the open-ended counterpart: when
+  a dossier's analysis *generates a new approach* (its blocking constraint,
+  inverted, becomes the next idea), record that instead. For research-style
+  work there is no verifiable "fix" to count; this is the signal that still
+  lets the bank learn which dossiers produce ideas.
 - Smarter recall ranking, still stdlib-only: signature-term overlap counts
   double (the signature is the retrieval key), task terms single, plus a
   capped boost per confirmed fix. Documented honestly in `DOSSIER_SPEC.md`.
 - v0.1 dossiers keep working — they validate as legacy, rank without the
   new boosts, and nothing is silently upgraded.
+
+## What v1 adds
+
+Everything above, plus the loop closed inside Claude Code — see
+[`plugins/garm/`](plugins/garm/) (its own README has install docs):
+
+- **Automatic pre-generation retrieval.** A `UserPromptSubmit` hook runs
+  `garm recall` on every prompt and injects matching autopsies as context
+  before the agent starts. No more remembering to recall; the past shows
+  up on its own. Silent when nothing matches, silent on any error — it
+  never breaks the session.
+- **`/garm:autopsy`.** One slash command scaffolds the dossier, walks
+  through the sections, validates, indexes, and closes the loop on
+  earlier dossiers (`confirm` / `confirm --insight`).
 
 ## What v0.2 changed and why
 
@@ -124,8 +143,10 @@ research note, about an unreleased model, not peer-reviewed. It is the
 
 ## Roadmap
 
-- **v0.3:** a Claude Code Mod for in-process failure capture — no more
-  hand-copying session logs; the Mod sees tool calls and failures directly.
+- **v1 (this release):** the Claude Code plugin (`plugins/garm/`) —
+  automatic pre-generation retrieval via a `UserPromptSubmit` hook, and
+  `/garm:autopsy` for one-command failure capture. The loop is closed:
+  recall happens without remembering to run it.
 - **Later:** assisted autopsy drafting, semantic retrieval, and the first
   Taste experiments grown from real dossier corpora.
 
