@@ -5,6 +5,8 @@ earned their keep, and ``recall`` ranks by weighted overlap (signature
 terms count double) plus a small boost for confirmed dossiers.
 v0.2.1: ``confirm --insight`` records dossiers whose analysis generated a
 new approach — the signal for open-ended work with no verifiable "fix".
+v1.1: ``import``/``export`` share dossier banks between agents; ``origin``
+tracks provenance.
 """
 
 from __future__ import annotations
@@ -95,11 +97,8 @@ def cmd_validate(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_index(args: argparse.Namespace) -> int:
-    base = Path(args.dir)
-    if not base.is_dir():
-        print(f"error: directory not found: {base}", file=sys.stderr)
-        return 1
+def _rebuild_index(base: Path) -> tuple[int, int]:
+    """Rebuild index.jsonl. Returns (indexed, skipped)."""
     entries = []
     skipped = 0
     for md in sorted(base.rglob("*.md")):
@@ -114,8 +113,52 @@ def cmd_index(args: argparse.Namespace) -> int:
     with index_path.open("w", encoding="utf-8") as fh:
         for entry in entries:
             fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
-    print(f"indexed {len(entries)} dossiers -> {index_path}"
+    return len(entries), skipped
+
+
+def cmd_index(args: argparse.Namespace) -> int:
+    base = Path(args.dir)
+    if not base.is_dir():
+        print(f"error: directory not found: {base}", file=sys.stderr)
+        return 1
+    n, skipped = _rebuild_index(base)
+    print(f"indexed {n} dossiers -> {base / 'index.jsonl'}"
           + (f" ({skipped} invalid skipped)" if skipped else ""))
+    return 0
+
+
+def cmd_import(args: argparse.Namespace) -> int:
+    """Import dossiers from another bank. Shared negative results are the
+    network effect: your bank learns from other agents' failures."""
+    base = Path(args.dir)
+    try:
+        result = D.import_dossiers(args.source, base)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    for old_id, new_id, _ in result["imported"]:
+        if old_id == new_id:
+            print(f"imported: {new_id}")
+        else:
+            print(f"imported: {old_id} -> {new_id} (id collision, renamed)")
+    for name, reason in result["skipped"]:
+        print(f"skipped: {name} ({reason})", file=sys.stderr)
+    n, _ = _rebuild_index(base)
+    print(f"indexed {n} dossiers -> {base / 'index.jsonl'}")
+    return 0
+
+
+def cmd_export(args: argparse.Namespace) -> int:
+    """Copy validated dossiers (not the derived index) to a directory for
+    sharing. The format is already portable; this is just hygiene."""
+    try:
+        result = D.export_bank(args.dir, args.out)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    for name, reason in result["skipped"]:
+        print(f"skipped: {name} ({reason})", file=sys.stderr)
+    print(f"exported {len(result['copied'])} dossiers -> {args.out}")
     return 0
 
 
@@ -144,9 +187,10 @@ def cmd_recall(args: argparse.Namespace) -> int:
         matched = ",".join(overlap) if overlap else "-"
         fixes = entry.get("confirmed_fixes", 0)
         insights = entry.get("confirmed_insights", 0)
+        origin = entry.get("origin") or "?"
         print(f"{total:3d} | {entry['id']} | {entry['task']} "
-              f"[{entry['path']}] (sig:{sig_n} task:{task_n} fix:{fixes} "
-              f"insight:{insights} matched: {matched})")
+              f"[{entry['path']}] (from:{origin} sig:{sig_n} task:{task_n} "
+              f"fix:{fixes} insight:{insights} matched: {matched})")
     return 0
 
 
@@ -162,6 +206,7 @@ def cmd_list(args: argparse.Namespace) -> int:
         fm = D.read_dossier(md)["frontmatter"]  # validated above; cannot fail
         rows.append((
             fm["id"],
+            D._origin_of(fm),
             fm.get("failure_class") or "-",
             D._confirmed_fixes_of(fm),
             D._confirmed_insights_of(fm),
@@ -172,11 +217,13 @@ def cmd_list(args: argparse.Namespace) -> int:
         print(f"no dossiers found in {base}")
         return 0
     rows.sort(key=lambda r: r[0])
-    print(f"{'ID':40} {'CLASS':15} {'FIX':4} {'INS':4} {'OUTCOME':9} TASK")
-    for dossier_id, failure_class, fixes, insights, outcome, task in rows:
-        task_short = task if len(task) <= 52 else task[:49] + "..."
-        print(f"{dossier_id[:40]:40} {failure_class[:15]:15} {fixes:<4} "
-              f"{insights:<4} {outcome:9} {task_short}")
+    print(f"{'ID':40} {'ORIGIN':18} {'CLASS':15} {'FIX':4} {'INS':4} "
+          f"{'OUTCOME':9} TASK")
+    for dossier_id, origin, failure_class, fixes, insights, outcome, task in rows:
+        task_short = task if len(task) <= 40 else task[:37] + "..."
+        print(f"{dossier_id[:40]:40} {origin[:18]:18} "
+              f"{failure_class[:15]:15} {fixes:<4} {insights:<4} "
+              f"{outcome:9} {task_short}")
     return 0
 
 
@@ -261,6 +308,37 @@ def build_parser() -> argparse.ArgumentParser:
     p_list = sub.add_parser("list", help="compact table of dossiers")
     p_list.add_argument("--dir", default="dossiers", help="dossier directory")
     p_list.set_defaults(func=cmd_list)
+
+    p_import = sub.add_parser(
+        "import",
+        help="import dossiers from another bank (shared failures)",
+        description=(
+            "Copy dossiers from another bank (a directory or a single .md "
+            "file) into this one. Each incoming dossier is validated "
+            "first; invalid ones are skipped with reasons. Id collisions "
+            "are renamed to <id>--from-<agent> — never overwritten. "
+            "The index is rebuilt automatically. This is the network "
+            "effect: your bank learns from other agents' failures."
+        ),
+    )
+    p_import.add_argument("source", help="dossier bank directory or .md file")
+    p_import.add_argument("--dir", default="dossiers",
+                          help="dossier directory to import into")
+    p_import.set_defaults(func=cmd_import)
+
+    p_export = sub.add_parser(
+        "export",
+        help="copy validated dossiers to a directory for sharing",
+        description=(
+            "Copy validated dossier .md files (not the derived index.jsonl) "
+            "to a directory for sharing. The format is already portable; "
+            "this is just hygiene."
+        ),
+    )
+    p_export.add_argument("-o", "--out", required=True,
+                          help="output directory (created if missing)")
+    p_export.add_argument("--dir", default="dossiers", help="dossier directory")
+    p_export.set_defaults(func=cmd_export)
 
     return parser
 

@@ -1,6 +1,6 @@
-# Garm — v1
+# Garm — v1.1
 
-**Your agent stops making the same mistake twice.**
+**Your agent stops making the same mistake twice. So does everyone else's.**
 
 Named for Garm, the hound at Hel's gate — nothing gets past him twice.
 
@@ -62,6 +62,22 @@ Everything above, plus the loop closed inside Claude Code — see
 - **`/garm:autopsy`.** One slash command scaffolds the dossier, walks
   through the sections, validates, indexes, and closes the loop on
   earlier dossiers (`confirm` / `confirm --insight`).
+
+## What v1.1 adds
+
+Shared banks. A negative result's value is saving the *next* person from
+trying it — a local-only bank caps that at one mind:
+
+- `garm import <bank-dir-or-file> --dir dossiers` — pull in another
+  agent's dossiers. Validated on the way in, `id` collisions renamed to
+  `<id>--from-<agent>` (never overwritten), index rebuilt automatically.
+- `garm export --dir dossiers -o bank/` — copy your validated dossiers
+  out for sharing.
+- `origin` — optional provenance label on each dossier (defaults to the
+  `agent`); `recall` and `list` show whose failure you're learning from.
+
+No registry, no server — sharing is files. That's deliberate: v1.1 is the
+format and commands that make a future registry possible.
 
 ## What v0.2 changed and why
 
@@ -143,12 +159,16 @@ research note, about an unreleased model, not peer-reviewed. It is the
 
 ## Roadmap
 
-- **v1 (this release):** the Claude Code plugin (`plugins/garm/`) —
-  automatic pre-generation retrieval via a `UserPromptSubmit` hook, and
+- **v1:** the Claude Code plugin (`plugins/garm/`) — automatic
+  pre-generation retrieval via a `UserPromptSubmit` hook, and
   `/garm:autopsy` for one-command failure capture. The loop is closed:
   recall happens without remembering to run it.
-- **Later:** assisted autopsy drafting, semantic retrieval, and the first
-  Taste experiments grown from real dossier corpora.
+- **v1.1 (this release):** shared dossier banks — `garm import`/`export`,
+  `origin` provenance. Negative results have network-effect value; now
+  banks can merge.
+- **Later:** assisted autopsy drafting, semantic retrieval, a public bank
+  registry, and the first Taste experiments grown from real dossier
+  corpora.
 
 ## License
 

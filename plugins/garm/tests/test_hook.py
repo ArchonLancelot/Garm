@@ -190,6 +190,27 @@ class HookProtocolTest(unittest.TestCase):
             # i.e. the path was parsed correctly despite [urgent] in the task
             self.assertIn("Check the staging deploy lock", ctx)
 
+    def test_injected_context_shows_provenance(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp) / "dossiers"
+            d.mkdir()
+            p = make_dossier(d, "2026-10-08-widget-deploy-flake",
+                             "deploy widgets to staging",
+                             "flaky-widget-deploy",
+                             "Check the staging deploy lock before retrying.")
+            text = p.read_text(encoding="utf-8").replace(
+                "confirmed_insights: 0",
+                "confirmed_insights: 0\norigin: alice-bank")
+            p.write_text(text, encoding="utf-8")
+            r = garm("index", "--dir", str(d), cwd=tmp)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            env = {"GARM_DIR": str(d), "GARM_HOME": str(GARM_HOME)}
+            r = run_hook(base_payload("deploy widgets to staging again", tmp), env)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            envelope = json.loads(r.stdout)
+            ctx = envelope["hookSpecificOutput"]["additionalContext"]
+            self.assertIn("(from: alice-bank)", ctx)
+
     def test_diagnostics_never_on_stdout(self):
         # even the quiet-failure path must not print diagnostics to stdout
         with tempfile.TemporaryDirectory() as tmp:

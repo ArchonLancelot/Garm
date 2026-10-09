@@ -45,7 +45,7 @@ SECTION_CHARS = 500         # cap per "what retrieval would have changed"
 CONTEXT_CHARS = 8000        # total cap, under Claude Code's 10k limit
 
 _RECALL_LINE_RE = re.compile(
-    r"^\s*(\d+)\s*\|\s*(\S+)\s*\|\s*(.*?)\s*\[[^\]]*\]\s*\(sig:\d+\s+task:\d+"
+    r"^\s*(\d+)\s*\|\s*(\S+)\s*\|\s*(.*?)\s*\[[^\]]*\]\s*\(from:(.*?)\ssig:\d+"
 )
 _SECTION_RE = re.compile(
     r"^##\s*what retrieval would have changed\s*$", re.IGNORECASE | re.MULTILINE
@@ -123,7 +123,7 @@ def main() -> int:
     if proc.returncode != 0 or not proc.stdout.strip():
         return 0
 
-    hits: list[tuple[int, str, str, str]] = []  # score, id, task, path
+    hits: list[tuple[int, str, str, str, str]] = []  # score, id, task, rel, origin
     for line in proc.stdout.splitlines():
         m = _RECALL_LINE_RE.match(line)
         if not m:
@@ -131,23 +131,23 @@ def main() -> int:
         score = int(m.group(1))
         if score < min_score:
             continue
-        dossier_id, task = m.group(2), m.group(3).strip()
-        # path is the [...] immediately before " (sig:" — anchored from the
+        dossier_id, task, origin = m.group(2), m.group(3).strip(), m.group(4).strip()
+        # path is the [...] immediately before " (from:" — anchored from the
         # end so brackets inside the task text can't misparse it
-        pm = re.search(r"\[([^\]]+)\]\s*\(sig:", line)
+        pm = re.search(r"\[([^\]]+)\]\s*\(from:", line)
         rel = pm.group(1) if pm else ""
-        hits.append((score, dossier_id, task, rel))
+        hits.append((score, dossier_id, task, rel, origin))
     if not hits:
         return 0
 
     blocks = []
-    for score, dossier_id, task, rel in hits[:top]:
+    for score, dossier_id, task, rel, origin in hits[:top]:
         changed = ""
         if rel:
             changed = _what_retrieval_would_have_changed(
                 os.path.join(dossier_dir, rel)
             )
-        block = f"- [{dossier_id}] {task} (recall score {score})"
+        block = f"- [{dossier_id}] (from: {origin}) {task} (recall score {score})"
         if changed:
             block += f"\n  What retrieval would have changed: {changed}"
         blocks.append(block)

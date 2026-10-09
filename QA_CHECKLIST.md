@@ -83,6 +83,17 @@ tag or public push. Check each box only after verifying, not before.
       have changed"; non-matching prompt yields empty stdout.
 - [ ] `/garm:autopsy` command file has valid frontmatter and the commands it
       tells the agent to run actually work (init/validate/index/confirm).
+- [ ] Hook's recall-output parser tracks the current `recall` format
+      (regression: the v1.1 `from:` addition broke it; hook tests caught it).
+
+## v1.1 sharing (import/export/origin)
+
+- [ ] `python3 -m unittest discover -s tests` covers: collision rename,
+      invalid skipped with reasons, single-file import, auto re-index,
+      export copies .md only, origin defaults to agent, recall shows origin.
+- [ ] `import` never overwrites: colliding ids renamed `<id>--from-<agent>`.
+- [ ] Round-trip: export a bank, import elsewhere, dossiers recallable with
+      provenance intact.
 
 ## When something slips through
 

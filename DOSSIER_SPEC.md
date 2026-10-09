@@ -51,6 +51,7 @@ confirmed_insights: 0
 | `failure_class` | yes for v0.2 | one of the five classes below |
 | `confirmed_fixes` | no | non-negative integer, default 0 |
 | `confirmed_insights` | no | non-negative integer, default 0 |
+| `origin` | no | free text, default = `agent` (provenance for imported banks) |
 
 `outcome: recovered` is for sessions that hit the wall and got past it — the
 autopsy is still worth keeping.
@@ -97,6 +98,37 @@ and `recall` boosts confirmed dossiers (each counter adds up to 5 points,
 capped separately). A dossier with confirmed fixes or insights has earned
 more trust than one with 0; the caps keep one veteran from swamping new
 dossiers forever.
+
+## origin
+
+Where the dossier came from. Optional free text; absent resolves to the
+`agent` field — a dossier you wrote is yours. It exists for imported
+banks (`garm import`): when you pull in someone else's dossiers, `origin`
+records whose they were, and `recall`/`list` show it, so the reader knows
+whose failure they're learning from. No format is enforced — it's a
+provenance label, not a key.
+
+## Sharing banks: import / export
+
+A dossier bank is just markdown files — already portable. Two commands
+make sharing deliberate:
+
+```bash
+# pull another bank (dir or single .md) into yours:
+python3 -m garm import /path/to/their-bank --dir dossiers
+# copy your validated dossiers out for sharing (not the derived index):
+python3 -m garm export --dir dossiers -o bank/
+```
+
+Import rules: each incoming dossier is validated first (invalid ones are
+skipped with reasons); `id` collisions are renamed to
+`<id>--from-<agent>` — never silently overwritten; the index rebuilds
+automatically. Export copies only validated `.md` files.
+
+Why this exists: a negative result's value is saving the *next* person
+from trying it. A local-only bank caps that at one mind. Sharing is the
+network effect — your agent stops making the same mistake twice, and so
+does everyone else's.
 
 ## Version policy
 
@@ -155,6 +187,7 @@ Fields:
 | `failure_class` | frontmatter class, or null for legacy v0.1 dossiers |
 | `confirmed_fixes` | frontmatter counter (0 if absent) |
 | `confirmed_insights` | frontmatter counter (0 if absent) |
+| `origin` | provenance label (defaults to `agent`) |
 | `outcome` | `failed` or `recovered` |
 | `path` | dossier path relative to the indexed directory |
 | `created` | ISO date from frontmatter |

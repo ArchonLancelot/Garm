@@ -10,6 +10,9 @@ v0.2 adds ``failure_class`` (what kind of failure this was) and
 helped — see ``garm confirm``). v0.2.1 adds ``confirmed_insights``: how many
 times a dossier's analysis *generated a new approach* (blocking constraint
 → idea), for open-ended work where there is no verifiable "fix" to count.
+v1.1 adds ``origin`` (optional): where the dossier came from, for imported
+banks — see ``garm import``. Absent means the dossier is yours; it resolves
+to the ``agent`` field.
 v0.1 dossiers still validate; they are treated as legacy and simply lack
 the new fields.
 """
@@ -322,6 +325,14 @@ def _confirmed_insights_of(frontmatter: dict[str, str]) -> int:
         return 0
 
 
+def _origin_of(frontmatter: dict[str, str]) -> str:
+    """Where the dossier came from. Optional ``origin`` field; absent (or
+    empty) resolves to the ``agent`` field — a dossier you wrote is yours.
+    Free text, no format enforced: it's a provenance label, not a key.
+    """
+    return frontmatter.get("origin") or frontmatter.get("agent") or ""
+
+
 def build_index_entry(dossier_path: Path, base_dir: Path) -> dict:
     """Build one index.jsonl record from a validated dossier file."""
     parsed = read_dossier(dossier_path)
@@ -346,6 +357,7 @@ def build_index_entry(dossier_path: Path, base_dir: Path) -> dict:
         "failure_class": fm.get("failure_class") or None,
         "confirmed_fixes": _confirmed_fixes_of(fm),
         "confirmed_insights": _confirmed_insights_of(fm),
+        "origin": _origin_of(fm),
         "outcome": fm["outcome"],
         "path": str(dossier_path.relative_to(base_dir)),
         "created": fm["created"],
@@ -431,3 +443,131 @@ def confirm_dossier(
             f"dossier {path} failed validation after confirm: {errors}"
         )
     return path, new_count
+
+
+_ID_LINE_RE = re.compile(r"^id:\s*([a-z0-9][a-z0-9-]*)", re.MULTILINE)
+
+
+def _rewrite_id(text: str, new_id: str) -> str:
+    """Replace the frontmatter ``id:`` line. The file was validated, so the
+    line exists exactly once in the frontmatter block."""
+    return _ID_LINE_RE.sub(f"id: {new_id}", text, count=1)
+
+
+def _unique_import_id(wanted: str, agent: str, taken: set[str]) -> str:
+    """Rename on collision: ``<id>--from-<agent>``, with -2, -3... if that
+    also collides. Never silently overwrites an existing dossier."""
+    if wanted not in taken:
+        return wanted
+    base = f"{wanted}--from-{slugify(agent or 'unknown')}"
+    cand, n = base, 2
+    while cand in taken:
+        cand = f"{base}-{n}"
+        n += 1
+    return cand
+
+
+def import_dossiers(
+    source: str | Path, dest_dir: str | Path
+) -> dict[str, list]:
+    """Import dossiers from another bank into ``dest_dir``.
+
+    ``source`` is a directory (every ``*.md`` in it, non-recursive) or a
+    single ``.md`` file. Each incoming dossier is validated first; invalid
+    ones are skipped with their reasons. Id collisions are renamed via
+    ``_unique_import_id`` — never overwritten. Files already living at
+    their destination path (self-import) are skipped.
+
+    Returns ``{"imported": [(old_id, new_id, dest_path_str)], "skipped":
+    [(source_name, reason)]}``. Does not re-index; the caller does that.
+    """
+    dest = Path(dest_dir)
+    dest.mkdir(parents=True, exist_ok=True)
+    src = Path(source)
+
+    if src.is_file():
+        candidates = [src]
+    elif src.is_dir():
+        candidates = sorted(src.glob("*.md"))
+    else:
+        raise ValueError(f"import source not found: {src}")
+    if src.is_dir() and src.resolve() == dest.resolve():
+        raise ValueError(
+            f"import source is the destination directory itself: {src}"
+        )
+
+    taken: set[str] = set()
+    for md in sorted(dest.rglob("*.md")):
+        try:
+            taken.add(read_dossier(md)["frontmatter"].get("id", ""))
+        except ValueError:
+            continue
+    taken.discard("")
+
+    imported: list[tuple[str, str, str]] = []
+    skipped: list[tuple[str, str]] = []
+    for cand_path in candidates:
+        errors = validate_dossier(cand_path)
+        if errors:
+            skipped.append(
+                (cand_path.name, "; ".join(errors[:3]))
+            )
+            continue
+        fm = read_dossier(cand_path)["frontmatter"]
+        old_id = fm.get("id", "")
+        dest_path = dest / f"{old_id}.md"
+        try:
+            if dest_path.resolve() == cand_path.resolve():
+                skipped.append((cand_path.name, "already in bank"))
+                continue
+        except OSError:
+            pass
+        new_id = _unique_import_id(old_id, fm.get("agent", ""), taken)
+        text = cand_path.read_text(encoding="utf-8")
+        if new_id != old_id:
+            text = _rewrite_id(text, new_id)
+            # re-validate after the rename (id format is enforced)
+            fm2, _ = split_frontmatter(text)
+            if not _ID_RE.match(fm2.get("id", "")):
+                skipped.append(
+                    (cand_path.name, f"renamed id {new_id!r} is invalid")
+                )
+                continue
+        final_path = dest / f"{new_id}.md"
+        final_path.write_text(text, encoding="utf-8")
+        taken.add(new_id)
+        imported.append((old_id, new_id, str(final_path)))
+    return {"imported": imported, "skipped": skipped}
+
+
+def export_bank(
+    src_dir: str | Path, out_dir: str | Path
+) -> dict[str, list]:
+    """Copy validated dossier ``.md`` files (not the derived index.jsonl)
+    to ``out_dir`` for sharing. Returns ``{"copied": [names], "skipped":
+    [(name, reason)]}``.
+    """
+    src = Path(src_dir)
+    out = Path(out_dir)
+    if not src.is_dir():
+        raise ValueError(f"dossier directory not found: {src}")
+    out.mkdir(parents=True, exist_ok=True)
+
+    copied: list[str] = []
+    skipped: list[tuple[str, str]] = []
+    for md in sorted(src.rglob("*.md")):
+        if md.name == "index.jsonl":
+            continue
+        errors = validate_dossier(md)
+        if errors:
+            skipped.append((md.name, "; ".join(errors[:3])))
+            continue
+        try:
+            rel = md.relative_to(src)
+        except ValueError:
+            rel = Path(md.name)
+        target = out / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(md.read_text(encoding="utf-8"), encoding="utf-8")
+        copied.append(str(rel))
+    return {"copied": copied, "skipped": skipped}

@@ -281,7 +281,11 @@ class ListV02Test(unittest.TestCase):
             header, row = r.stdout.splitlines()[0], r.stdout.splitlines()[1]
             self.assertIn("CLASS", header)
             self.assertIn("FIX", header)
-            self.assertIn("1", row.split()[2])
+            self.assertIn("ORIGIN", header)
+            cols = row.split()
+            # ID ORIGIN CLASS FIX INS OUTCOME TASK
+            self.assertEqual(cols[2], "knowledge-gap")
+            self.assertIn("1", cols[3])
 
 
 if __name__ == "__main__":
