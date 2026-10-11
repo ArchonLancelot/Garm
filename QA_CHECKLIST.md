@@ -77,7 +77,8 @@ tag or public push. Check each box only after verifying, not before.
       `grep -riE "todo|fixme|placeholder|XXX" --include="*.py" garm/ tests/ plugins/`
       returns nothing (excluding this checklist's own mention).
 - [ ] Stdlib only: `grep -rE "^import |^from " garm/ plugins/garm/hooks/`
-      shows no third-party imports.
+      shows no third-party imports. (`mcp_server/` is the deliberate
+      exception: it needs the `mcp` SDK. `garm/` itself stays stdlib-only.)
 - [ ] No secrets, keys, or personal data in the tree.
 - [ ] No stale product-name references: `grep -rn "Autopsy" --include="*.py"
       --include="*.md" .` returns nothing (`autopsy` lowercase survives only
@@ -96,6 +97,21 @@ tag or public push. Check each box only after verifying, not before.
       tells the agent to run actually work (init/validate/index/confirm).
 - [ ] Hook's recall-output parser tracks the current `recall` format
       (regression: the v1.1 `from:` addition broke it; hook tests caught it).
+
+## MCP server (mcp_server/)
+
+- [ ] With `mcp` 2.x installed (`pip install mcp`):
+      `python -m unittest discover -s mcp_server/tests -t .` — all green.
+- [ ] On stdlib-only Python the same command skips (8 skipped), never fails.
+- [ ] `/garm:autopsy`-style live check: real MCP client over stdio —
+      initialize, list_tools shows the 5 tools, and a full
+      init → validate → confirm → recall → list round trip works.
+- [ ] `garm_recall`/`garm_list` return one JSON array in a single text
+      block (the SDK unrolls Python lists into multiple blocks).
+- [ ] Confirming a scaffold fails cleanly (validate-first, like the CLI).
+- [ ] `mcp_server/README.md` config snippets (Claude Desktop, Cursor)
+      reference `python -m mcp_server` from the repo root.
+- [ ] `mcp_server/requirements.txt` pins `mcp>=2,<3`.
 
 ## v1.1 sharing (import/export/origin)
 

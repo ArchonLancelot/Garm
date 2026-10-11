@@ -12,9 +12,7 @@ tracks provenance.
 from __future__ import annotations
 
 import argparse
-import json
 import sys
-from datetime import date
 from pathlib import Path
 
 from . import dossier as D
@@ -39,21 +37,10 @@ def recall_score(query_keys: list[str], entry: dict) -> tuple[int, int, int, int
 
 
 def cmd_init(args: argparse.Namespace) -> int:
-    out_dir = Path(args.out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    created = date.today().isoformat()
-    dossier_id = f"{created}-{D.slugify(args.task)}"
-    path = out_dir / f"{dossier_id}.md"
-    n = 2
-    while path.exists():
-        path = out_dir / f"{dossier_id}-{n}.md"
-        n += 1
-    text = D.render_template(
+    path = D.init_dossier(
         task=args.task, agent=args.agent, outcome=args.outcome,
-        failure_class=args.failure_class, created=created,
-        id_=path.stem,
+        failure_class=args.failure_class, out_dir=args.out_dir,
     )
-    path.write_text(text, encoding="utf-8")
     print(str(path))
     return 0
 
@@ -76,7 +63,7 @@ def cmd_confirm(args: argparse.Namespace) -> int:
     label = "confirmed insights" if args.insight else "confirmed fixes"
     print(f"confirmed: {args.id} ({label}: {new_count}) [{path}]")
     base = Path(args.dir)
-    n, skipped = _rebuild_index(base)
+    n, skipped = D.rebuild_index(base)
     print(f"indexed {n} dossiers -> {base / 'index.jsonl'}"
           + (f" ({skipped} invalid skipped)" if skipped else ""))
     return 0
@@ -100,31 +87,12 @@ def cmd_validate(args: argparse.Namespace) -> int:
     return 0
 
 
-def _rebuild_index(base: Path) -> tuple[int, int]:
-    """Rebuild index.jsonl. Returns (indexed, skipped)."""
-    entries = []
-    skipped = 0
-    for md in sorted(base.rglob("*.md")):
-        errors = D.validate_dossier(md)
-        if errors:
-            print(f"warning: skipping invalid dossier {md}", file=sys.stderr)
-            skipped += 1
-            continue
-        entries.append(D.build_index_entry(md, base))
-    entries.sort(key=lambda e: e["id"])
-    index_path = base / "index.jsonl"
-    with index_path.open("w", encoding="utf-8") as fh:
-        for entry in entries:
-            fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
-    return len(entries), skipped
-
-
 def cmd_index(args: argparse.Namespace) -> int:
     base = Path(args.dir)
     if not base.is_dir():
         print(f"error: directory not found: {base}", file=sys.stderr)
         return 1
-    n, skipped = _rebuild_index(base)
+    n, skipped = D.rebuild_index(base)
     print(f"indexed {n} dossiers -> {base / 'index.jsonl'}"
           + (f" ({skipped} invalid skipped)" if skipped else ""))
     return 0
@@ -146,7 +114,7 @@ def cmd_import(args: argparse.Namespace) -> int:
             print(f"imported: {old_id} -> {new_id} (id collision, renamed)")
     for name, reason in result["skipped"]:
         print(f"skipped: {name} ({reason})", file=sys.stderr)
-    n, _ = _rebuild_index(base)
+    n, _ = D.rebuild_index(base)
     print(f"indexed {n} dossiers -> {base / 'index.jsonl'}")
     return 0
 

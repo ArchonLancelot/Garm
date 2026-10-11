@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from datetime import date
 from pathlib import Path
 
@@ -405,6 +406,72 @@ def build_index_entry(dossier_path: Path, base_dir: Path) -> dict:
         "path": str(dossier_path.relative_to(base_dir)),
         "created": fm["created"],
     }
+
+
+def rebuild_index(base_dir: str | Path) -> tuple[int, int]:
+    """Rebuild ``index.jsonl`` in ``base_dir``. Returns (indexed, skipped).
+
+    The index is fully derived from the dossier files: invalid ones are
+    skipped with a warning on stderr. Rebuilding is byte-identical for
+    unchanged input.
+    """
+    base = Path(base_dir)
+    entries = []
+    skipped = 0
+    for md in sorted(base.rglob("*.md")):
+        errors = validate_dossier(md)
+        if errors:
+            print(f"warning: skipping invalid dossier {md}", file=sys.stderr)
+            skipped += 1
+            continue
+        entries.append(build_index_entry(md, base))
+    entries.sort(key=lambda e: e["id"])
+    index_path = base / "index.jsonl"
+    with index_path.open("w", encoding="utf-8") as fh:
+        for entry in entries:
+            fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    return len(entries), skipped
+
+
+def init_dossier(
+    task: str,
+    agent: str,
+    failure_class: str,
+    outcome: str = "failed",
+    out_dir: str | Path = "dossiers",
+    created: str | None = None,
+) -> Path:
+    """Scaffold a new dossier file in ``out_dir``. Returns the file path.
+
+    The id is ``<created>-<task-slug>`` (slug truncated to 50 chars),
+    with ``-2``, ``-3``... appended on filename collision. ``created``
+    defaults to the machine's local date. A scaffold is not a dossier:
+    fill every section honestly, then validate (placeholder text fails).
+    """
+    if failure_class not in VALID_FAILURE_CLASSES:
+        raise ValueError(
+            f"failure_class {failure_class!r} must be one of "
+            f"{VALID_FAILURE_CLASSES}"
+        )
+    if outcome not in VALID_OUTCOMES:
+        raise ValueError(
+            f"outcome {outcome!r} must be one of {VALID_OUTCOMES}"
+        )
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    created = created or date.today().isoformat()
+    dossier_id = f"{created}-{slugify(task)}"
+    path = out / f"{dossier_id}.md"
+    n = 2
+    while path.exists():
+        path = out / f"{dossier_id}-{n}.md"
+        n += 1
+    text = render_template(
+        task=task, agent=agent, outcome=outcome,
+        failure_class=failure_class, created=created, id_=path.stem,
+    )
+    path.write_text(text, encoding="utf-8")
+    return path
 
 
 def load_index_entries(index_path: Path) -> list[dict]:

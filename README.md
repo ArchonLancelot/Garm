@@ -166,6 +166,11 @@ research note, about an unreleased model, not peer-reviewed. It is the
 - **v1.1 (this release):** shared dossier banks — `garm import`/`export`,
   `origin` provenance. Negative results have network-effect value; now
   banks can merge.
+- **MCP server (`mcp_server/`):** the universal adapter — exposes recall,
+  init, validate, confirm, and list as MCP tools over stdio, so any
+  MCP-capable agent (Claude Desktop, Cursor, …) can drive a dossier bank
+  without the Claude Code hook. Needs `pip install mcp`; the core stays
+  stdlib-only. See `mcp_server/README.md`.
 - **Later:** assisted autopsy drafting, semantic retrieval, a public bank
   registry, and the first Taste experiments grown from real dossier
   corpora.
