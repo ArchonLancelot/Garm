@@ -90,7 +90,9 @@ as Pass 3. → dossier
 mirror-image-also-one-sided — the diagnosis was right, the cure wasn't;
 the next inversion is two-sided construction, which for BPSW is
 Pomerance's subset-product, known intractable. Recognize when the idea
-chain terminates).
+chain terminates). (Numbering note: the dossier itself calls this run
+"Pass 3, mirror of Pass 2" — a slip; it is Pass 4 in this writeup's
+sequence.)
 
 ## Pass 5 — two-sidedness at the prime level (v1 hook recall)
 
@@ -202,11 +204,16 @@ Method A* (P=Q=5 when D=5); this problem pins Method A exactly.
 7 reasoning-error, 3 knowledge-gap. 0 execution-slip, 0 tool-misuse,
 0 misread-task. One dossier (Pass 7, the squarefreeness theorem) has
 outcome `recovered` — it records a success inside a failure bank, which
-the v0.2 format allows. `confirmed_fixes`/`confirmed_insights` are 0 in
-this snapshot: v1's `confirm --insight` was dogfooded against these
-dossiers (4 insights, 1 fix) on the live repo, but this archive freezes
-the experiment record as-written — the writeup is the place for the
-post-hoc read, not the dossiers.
+the v0.2 format allows. Counter note (updated 2026-10-11): the first
+foreign-agent field test (Hark, same problem, within-subject design)
+credited six dossiers — 4 `confirm --insight` (Pass 3/4 premise-negation,
+Pass 5 open-question targeting, Pass 7 lemma) and 2 `confirm` (Pass 8
+prevented a Pomerance rerun, near-miss validate-first discipline) — so
+`confirmed_fixes`/`confirmed_insights` are 1 on those six in the live
+bank. (Earlier: v1's `confirm --insight` was dogfooded against these
+dossiers, 4 insights + 1 fix, on the live repo only — this archive
+freezes the experiment record as-written; the writeup is the place for
+the post-hoc read, not the dossiers.)
 
 ## Files
 
