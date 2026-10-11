@@ -1,4 +1,4 @@
-# Dossier format spec — v0.2.2 (Garm)
+# Dossier format spec — v0.2.3 (Garm)
 
 A **dossier** is one hand-written failure autopsy: a Markdown file with a
 small frontmatter block and fixed `##` sections. The analysis inside is
@@ -16,6 +16,12 @@ v0.2.2 adds two *optional* sections, `## Challengeable premises` and
 field test (2026-10-11), where negating a stated premise produced the
 genuinely new idea. Nothing already written needs to change: v0.2/0.2.1
 dossiers validate as before, with or without the new sections.
+v0.2.3 hardens the loop based on the same field test's machinery run
+(Hark operating the CLI from docs alone): `validate` now rejects any
+section left as the scaffold's placeholder guidance text — a template is
+not a dossier; `import` skips byte-identical duplicates instead of
+renaming them; `confirm` rebuilds the index automatically (like `import`
+already did).
 v0.1 dossiers remain valid; they are treated as legacy and simply lack the
 new fields.
 
@@ -142,6 +148,10 @@ does everyone else's.
   premises` and `## Open questions` sections. `dossier_version` stays
   `"0.2"` — the new sections are additive, so nothing already written
   needs to change and old dossiers validate untouched.
+- v0.2.3: same format as v0.2.2, stricter tooling. `validate` rejects
+  sections left as scaffold placeholder text; `import` skips
+  byte-identical duplicates; `confirm` auto-rebuilds the index.
+  `dossier_version` stays `"0.2"`.
 - v0.1 dossiers (no `failure_class`): still validate and index. `validate`
   prints a note that they're legacy. In `recall` they rank normally
   (signature weighting is derived, so it applies); they are simply skipped
@@ -180,9 +190,12 @@ Optional:
    one-line method note. Optional because honest estimates aren't always
    available; never invent one.
 
-Validation (`garm validate`) checks exactly the table and list above —
-nothing more. A dossier that passes validation is *structurally* sound; the
-truth of its analysis is the author's responsibility.
+Validation (`garm validate`) checks the table and list above, plus one
+honesty check: a *required* section whose content is still exactly the
+scaffold's placeholder guidance text fails validation — a template is not
+a dossier. (Optional sections are exempt: they can simply be deleted.)
+A dossier that passes validation is *structurally* sound; the truth of
+its analysis is the author's responsibility.
 
 ## index.jsonl
 

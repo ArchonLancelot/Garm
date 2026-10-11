@@ -18,6 +18,10 @@ v0.2.2 adds two optional sections, ``## Challengeable premises`` and
 negatable) and the precise questions the failure left open. Motivated by
 the first foreign-agent field test (2026-10-11), where negating a stated
 premise produced the genuinely new idea.
+v0.2.3: ``validate`` rejects sections left as the scaffold's placeholder
+guidance text (a scaffold is not a dossier — found by the same field
+test's machinery run); ``import`` skips byte-identical duplicates instead
+of renaming them.
 v0.1 dossiers still validate; they are treated as legacy and simply lack
 the new fields.
 """
@@ -29,6 +33,7 @@ import re
 from datetime import date
 from pathlib import Path
 
+SPEC_VERSION = "0.2.3"
 DOSSIER_VERSION = "0.2"
 ACCEPTED_VERSIONS = ("0.1", "0.2")
 
@@ -240,6 +245,21 @@ def validate_dossier(path: str | Path) -> list[str]:
         elif not sections[section]:
             errors.append(f"section: '## {section}' is present but empty")
 
+    # v0.2.3: a scaffold is not a dossier. A *required* section whose
+    # content is still exactly the template's placeholder guidance text
+    # fails — otherwise `init` output would validate untouched and banks
+    # could fill with blank autopsies that all pass. (Optional sections
+    # are exempt: they may simply be deleted, so placeholder text there
+    # is a cosmetic wart, not an empty autopsy.)
+    for section in REQUIRED_SECTIONS:
+        content = sections.get(section, "")
+        guidance = _GUIDANCE_BY_TITLE.get(section)
+        if guidance and content.strip() == guidance:
+            errors.append(
+                f"section: '## {section}' still has the scaffold placeholder "
+                f"text — fill it in honestly (a template is not a dossier)"
+            )
+
     return errors
 
 
@@ -260,6 +280,13 @@ _SECTION_GUIDANCE = {
     "Tokens": "_Optional: estimated tokens spent repeating failed approaches, "
     "with a one-line method note._",
     "Confidence": "_How confident are you in this autopsy? What would change your mind?_",
+}
+
+
+# Lowercase section title -> stripped placeholder guidance text, for the
+# v0.2.3 scaffold check in validate_dossier.
+_GUIDANCE_BY_TITLE = {
+    title.lower(): guidance.strip() for title, guidance in _SECTION_GUIDANCE.items()
 }
 
 
@@ -513,11 +540,15 @@ def import_dossiers(
         )
 
     taken: set[str] = set()
+    by_id: dict[str, Path] = {}
     for md in sorted(dest.rglob("*.md")):
         try:
-            taken.add(read_dossier(md)["frontmatter"].get("id", ""))
+            did = read_dossier(md)["frontmatter"].get("id", "")
         except ValueError:
             continue
+        if did:
+            taken.add(did)
+            by_id.setdefault(did, md)
     taken.discard("")
 
     imported: list[tuple[str, str, str]] = []
@@ -538,6 +569,12 @@ def import_dossiers(
                 continue
         except OSError:
             pass
+        # v0.2.3: an id collision with byte-identical content is a
+        # re-import, not a new dossier — skip it instead of renaming.
+        existing = by_id.get(old_id)
+        if existing is not None and existing.read_bytes() == cand_path.read_bytes():
+            skipped.append((cand_path.name, "already in bank (identical content)"))
+            continue
         new_id = _unique_import_id(old_id, fm.get("agent", ""), taken)
         text = cand_path.read_text(encoding="utf-8")
         if new_id != old_id:
@@ -552,6 +589,7 @@ def import_dossiers(
         final_path = dest / f"{new_id}.md"
         final_path.write_text(text, encoding="utf-8")
         taken.add(new_id)
+        by_id.setdefault(new_id, final_path)
         imported.append((old_id, new_id, str(final_path)))
     return {"imported": imported, "skipped": skipped}
 

@@ -146,7 +146,9 @@ class ScaffoldIncludesNewSectionsTest(unittest.TestCase):
         positions = [text.index(h) for h in order]
         self.assertEqual(positions, sorted(positions))
 
-    def test_init_scaffold_validates_with_new_sections(self):
+    def test_init_scaffold_rejected_until_filled(self):
+        # v0.2.3: the scaffold (including the new sections) must not pass
+        # validation until the placeholder text is replaced with analysis.
         with tempfile.TemporaryDirectory() as tmp:
             r = garm("init", "--task", "Some task", "--agent", "claude-code",
                      "--class", "knowledge-gap", "-o", "dossiers", cwd=tmp)
@@ -156,7 +158,10 @@ class ScaffoldIncludesNewSectionsTest(unittest.TestCase):
             self.assertIn("## Challengeable premises", body)
             self.assertIn("## Open questions", body)
             r = garm("validate", str(p), cwd=tmp)
-            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+            # required sections are named; optional ones are exempt
+            self.assertIn("what was tried", r.stdout)
+            self.assertNotIn("challengeable premises", r.stdout)
 
 
 if __name__ == "__main__":

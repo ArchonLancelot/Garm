@@ -63,7 +63,9 @@ class InitClassTest(unittest.TestCase):
             self.assertEqual(r.returncode, 2)
             self.assertIn("knowledge-gap", r.stderr)
 
-    def test_init_scaffold_is_valid_v02(self):
+    def test_init_scaffold_rejected_until_filled(self):
+        # v0.2.3: a fresh scaffold is not a dossier — validate rejects the
+        # untouched placeholder guidance text instead of passing it.
         with tempfile.TemporaryDirectory() as tmp:
             r = garm("init", "--task", "Some task", "--agent", "claude-code",
                         "--class", "knowledge-gap", "-o", "dossiers", cwd=tmp)
@@ -74,7 +76,8 @@ class InitClassTest(unittest.TestCase):
             self.assertEqual(fm["failure_class"], "knowledge-gap")
             self.assertEqual(fm["confirmed_fixes"], "0")
             r = garm("validate", str(p), cwd=tmp)
-            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+            self.assertIn("placeholder", r.stdout)
 
 
 class ValidateV02Test(unittest.TestCase):

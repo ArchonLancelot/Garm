@@ -1,4 +1,4 @@
-# QA checklist — Garm v0.2
+# QA checklist — Garm v0.2.3
 
 Standing rule: nothing ships untested. Run this whole list before any release
 tag or public push. Check each box only after verifying, not before.
@@ -16,6 +16,13 @@ tag or public push. Check each box only after verifying, not before.
       `## Open questions` validate whether present or absent (old dossiers
       unaffected); `init` scaffolds them with guidance; the spec documents
       both and the "earn their keep" lesson behind them.
+- [ ] v0.2.3: `validate` rejects a fresh `init` scaffold (placeholder
+      guidance text) naming the unfilled sections; a fully-filled dossier
+      passes. `import` of an identical bank skips with "already in bank
+      (identical content)" and changes nothing; modified colliding ids
+      still rename. `confirm` rebuilds the index by itself (no manual
+      re-index). `--help` shows the spec version from one constant and
+      `recall --help` explains the output columns.
 
 ## CLI
 

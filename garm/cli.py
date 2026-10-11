@@ -75,7 +75,10 @@ def cmd_confirm(args: argparse.Namespace) -> int:
         return 1
     label = "confirmed insights" if args.insight else "confirmed fixes"
     print(f"confirmed: {args.id} ({label}: {new_count}) [{path}]")
-    print("hint: run `garm index` to refresh index.jsonl", file=sys.stderr)
+    base = Path(args.dir)
+    n, skipped = _rebuild_index(base)
+    print(f"indexed {n} dossiers -> {base / 'index.jsonl'}"
+          + (f" ({skipped} invalid skipped)" if skipped else ""))
     return 0
 
 
@@ -231,14 +234,26 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="garm",
         description=(
-            "Garm v0.2 failure-memory CLI. Hand-operated: the agent writes "
+            f"Garm failure-memory CLI (dossier spec v{D.SPEC_VERSION}). "
+            "Hand-operated: the agent writes "
             "the analysis; this tool handles structure, storage, validation, "
             "and retrieval."
         ),
     )
     sub = parser.add_subparsers(dest="command", required=True, metavar="command")
 
-    p_init = sub.add_parser("init", help="scaffold a new dossier from the template")
+    p_init = sub.add_parser(
+        "init",
+        help="scaffold a new dossier from the template",
+        description=(
+            "Scaffold a new dossier from the template. The id is derived "
+            "from the date and task slug (truncated to 50 characters); "
+            "`created` is the machine's local date. A scaffold is not a "
+            "dossier: fill in every section honestly, then validate — "
+            "`validate` rejects sections left as the template's placeholder "
+            "text."
+        ),
+    )
     p_init.add_argument("--task", required=True, help="one-line description of the failed task")
     p_init.add_argument("--agent", required=True, help="which agent/scaffold ran it, e.g. claude-code")
     p_init.add_argument("--outcome", default="failed", choices=["failed", "recovered"],
@@ -268,7 +283,7 @@ def build_parser() -> argparse.ArgumentParser:
             "for open-ended work where there is no verifiable 'fix' to "
             "count. Confirmed dossiers rank higher in recall — this is how "
             "the dossier bank learns which autopsies earn their keep. "
-            "Re-run `index` after."
+            "The index is rebuilt automatically."
         ),
     )
     p_confirm.add_argument("id", help="dossier id (frontmatter `id:` value)")
@@ -294,7 +309,13 @@ def build_parser() -> argparse.ArgumentParser:
             "similarity: no embeddings, no model calls, no magic. It finds "
             "dossiers that talk about the same things, weighted toward the "
             "parts of a dossier written to be matched on and toward dossiers "
-            "with a track record."
+            "with a track record. "
+            "Output columns per hit: TOTAL | id | task [path] "
+            "(from:origin sig:<n> task:<n> fix:<n> insight:<n> "
+            "matched: <terms>). sig: counts matched signature terms (each "
+            "worth 2 points); task: counts matched task terms (1 point "
+            "each); fix:/insight: show the dossier's confirmed counters "
+            "(each adds up to 5 points, already included in TOTAL)."
         ),
     )
     p_recall.add_argument("--task", required=True, help="describe the current task")
@@ -316,8 +337,10 @@ def build_parser() -> argparse.ArgumentParser:
             "Copy dossiers from another bank (a directory or a single .md "
             "file) into this one. Each incoming dossier is validated "
             "first; invalid ones are skipped with reasons. Id collisions "
-            "are renamed to <id>--from-<agent> — never overwritten. "
-            "The index is rebuilt automatically. This is the network "
+            "are renamed to <id>--from-<agent> — never overwritten — "
+            "unless the incoming file is byte-identical to the one "
+            "already banked, in which case it is skipped as already in "
+            "bank. The index is rebuilt automatically. This is the network "
             "effect: your bank learns from other agents' failures."
         ),
     )

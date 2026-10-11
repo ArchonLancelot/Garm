@@ -42,7 +42,9 @@ it (`knowledge-gap`)? Did it have the facts and still go wrong
 - **Confidence** — how confident you are, and what would change your mind.
 
 No invented details. If a section can't be filled honestly, say what's
-unknown instead.
+unknown instead — but don't leave the scaffold's placeholder text in a
+*required* section: `validate` rejects those as unfilled (a scaffold is
+not a dossier). Optional sections you don't need can simply be deleted.
 
 ## 3. Validate, index
 
@@ -60,7 +62,7 @@ If a *retrieved* dossier shaped this run, confirm it so the bank learns:
 python3 -m garm confirm <earlier-dossier-id> --dir "${GARM_DIR:-dossiers}"
 # its analysis generated a new approach (open-ended work, no verifiable fix):
 python3 -m garm confirm <earlier-dossier-id> --insight --dir "${GARM_DIR:-dossiers}"
-python3 -m garm index --dir "${GARM_DIR:-dossiers}"
 ```
 
-Don't confirm on vibes — the counters are the dossier bank's track record.
+The index rebuilds automatically after confirm. Don't confirm on vibes —
+the counters are the dossier bank's track record.
