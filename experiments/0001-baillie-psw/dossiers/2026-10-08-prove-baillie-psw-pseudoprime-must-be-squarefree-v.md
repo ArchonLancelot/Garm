@@ -7,7 +7,7 @@ task: "Prove Baillie-PSW pseudoprime must be squarefree via Wieferich/Wall-Sun-S
 outcome: recovered
 failure_class: knowledge-gap
 confirmed_fixes: 0
-confirmed_insights: 0
+confirmed_insights: 1
 ---
 
 # Failure dossier: Prove Baillie-PSW pseudoprime must be squarefree via Wieferich/Wall-Sun-Sun

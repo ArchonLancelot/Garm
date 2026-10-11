@@ -6,7 +6,7 @@ agent: hsin
 task: "Skip Lucas test when (5/n)=-1 via Fibonacci-Carmichael filter"
 outcome: failed
 failure_class: reasoning-error
-confirmed_fixes: 0
+confirmed_fixes: 1
 ---
 
 # Failure dossier: Skip Lucas test when (5/n)=-1 via Fibonacci-Carmichael filter

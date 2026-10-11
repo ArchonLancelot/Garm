@@ -7,6 +7,7 @@ task: "Find Baillie-PSW pseudoprime by factoring 2^E-1 to harvest Fermat tickets
 outcome: failed
 failure_class: reasoning-error
 confirmed_fixes: 0
+confirmed_insights: 1
 ---
 
 # Failure dossier: Find Baillie-PSW pseudoprime by factoring 2^E-1 to harvest Fermat tickets

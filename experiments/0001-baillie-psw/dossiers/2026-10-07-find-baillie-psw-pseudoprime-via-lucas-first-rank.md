@@ -7,6 +7,7 @@ task: "Find Baillie-PSW pseudoprime via Lucas-first rank-of-apparition construct
 outcome: failed
 failure_class: reasoning-error
 confirmed_fixes: 0
+confirmed_insights: 1
 ---
 
 # Failure dossier: Find Baillie-PSW pseudoprime via Lucas-first rank-of-apparition construction

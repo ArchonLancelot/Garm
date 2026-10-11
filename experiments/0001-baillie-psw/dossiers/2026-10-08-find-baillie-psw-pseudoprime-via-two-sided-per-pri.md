@@ -7,7 +7,7 @@ task: "Find Baillie-PSW pseudoprime via two-sided per-prime ord/omega search"
 outcome: failed
 failure_class: reasoning-error
 confirmed_fixes: 0
-confirmed_insights: 0
+confirmed_insights: 1
 ---
 
 # Failure dossier: Find Baillie-PSW pseudoprime via two-sided per-prime ord/omega search

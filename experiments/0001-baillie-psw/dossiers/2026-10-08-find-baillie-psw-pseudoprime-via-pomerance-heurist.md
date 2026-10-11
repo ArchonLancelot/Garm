@@ -6,7 +6,7 @@ agent: claude-code
 task: "Find Baillie-PSW pseudoprime via Pomerance heuristic construction"
 outcome: failed
 failure_class: knowledge-gap
-confirmed_fixes: 0
+confirmed_fixes: 1
 confirmed_insights: 0
 ---
 
