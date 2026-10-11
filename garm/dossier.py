@@ -13,6 +13,11 @@ times a dossier's analysis *generated a new approach* (blocking constraint
 v1.1 adds ``origin`` (optional): where the dossier came from, for imported
 banks — see ``garm import``. Absent means the dossier is yours; it resolves
 to the ``agent`` field.
+v0.2.2 adds two optional sections, ``## Challengeable premises`` and
+``## Open questions``: the load-bearing assumptions (phrased to be
+negatable) and the precise questions the failure left open. Motivated by
+the first foreign-agent field test (2026-10-11), where negating a stated
+premise produced the genuinely new idea.
 v0.1 dossiers still validate; they are treated as legacy and simply lack
 the new fields.
 """
@@ -63,7 +68,11 @@ REQUIRED_SECTIONS = (
     "what retrieval would have changed",
     "confidence",
 )
-OPTIONAL_SECTIONS = ("tokens",)
+# v0.2.2: two more optional sections. "Challengeable premises" lists the
+# load-bearing assumptions phrased so a reader can negate them (negating one
+# produced the new idea in the first foreign-agent field test); "Open
+# questions" captures the precise questions the failure left behind.
+OPTIONAL_SECTIONS = ("tokens", "challengeable premises", "open questions")
 
 _ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 
@@ -241,8 +250,13 @@ _SECTION_GUIDANCE = {
     "'if you see X in the first few turns, stop and retrieve this dossier.'_",
     "Blocking constraint": "_The fact about the repo, environment, or task that made the "
     "approaches fail — one to three sentences._",
+    "Challengeable premises": "_The load-bearing assumptions the attempts rested on, "
+    "each phrased so a future reader can ask 'what if this is false?' Negating "
+    "one is often the next idea._",
     "What retrieval would have changed": "_Concretely: which early turn a second run would "
     "skip, and what it would do instead._",
+    "Open questions": "_Precise questions this failure left open for a future run to "
+    "aim at — not background, but targets._",
     "Tokens": "_Optional: estimated tokens spent repeating failed approaches, "
     "with a one-line method note._",
     "Confidence": "_How confident are you in this autopsy? What would change your mind?_",
@@ -295,7 +309,9 @@ def render_template(
         "Root cause",
         "Failure signature",
         "Blocking constraint",
+        "Challengeable premises",
         "What retrieval would have changed",
+        "Open questions",
         "Tokens",
         "Confidence",
     ):

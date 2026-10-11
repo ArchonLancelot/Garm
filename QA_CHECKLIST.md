@@ -12,6 +12,10 @@ tag or public push. Check each box only after verifying, not before.
 - [ ] A legacy v0.1 dossier (no `failure_class`) still validates with a
       non-fatal note, indexes, and is recalled.
 - [ ] The example is clearly marked illustrative/synthetic.
+- [ ] New optional sections `## Challengeable premises` and
+      `## Open questions` validate whether present or absent (old dossiers
+      unaffected); `init` scaffolds them with guidance; the spec documents
+      both and the "earn their keep" lesson behind them.
 
 ## CLI
 

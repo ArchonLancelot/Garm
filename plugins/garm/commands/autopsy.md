@@ -32,8 +32,13 @@ it (`knowledge-gap`)? Did it have the facts and still go wrong
 - **Blocking constraint** — the fact about the repo, environment, or task
   that made the approaches fail, in one to three sentences. Write it
   precisely: its inversion is often the next idea.
+- **Challengeable premises** — the load-bearing assumptions the attempts
+  rested on, each phrased so a future reader can ask "what if this is
+  false?" Negating one is often the next idea.
 - **What retrieval would have changed** — concretely: which early turn a
   second run would skip, and what it would do instead.
+- **Open questions** — precise questions this failure left open for a
+  future run to aim at.
 - **Confidence** — how confident you are, and what would change your mind.
 
 No invented details. If a section can't be filled honestly, say what's

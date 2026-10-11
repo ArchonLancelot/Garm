@@ -1,4 +1,4 @@
-# Dossier format spec — v0.2.1 (Garm)
+# Dossier format spec — v0.2.2 (Garm)
 
 A **dossier** is one hand-written failure autopsy: a Markdown file with a
 small frontmatter block and fixed `##` sections. The analysis inside is
@@ -11,6 +11,11 @@ dossier demonstrably helped — starts at 0, bumped with `garm confirm`).
 v0.2.1 adds `confirmed_insights` (how many times a dossier's analysis
 generated a new approach — starts at 0, bumped with `garm confirm
 --insight`; the signal for open-ended work with no verifiable "fix").
+v0.2.2 adds two *optional* sections, `## Challengeable premises` and
+`## Open questions` (see below) — motivated by the first foreign-agent
+field test (2026-10-11), where negating a stated premise produced the
+genuinely new idea. Nothing already written needs to change: v0.2/0.2.1
+dossiers validate as before, with or without the new sections.
 v0.1 dossiers remain valid; they are treated as legacy and simply lack the
 new fields.
 
@@ -133,6 +138,10 @@ does everyone else's.
 ## Version policy
 
 - v0.2 dossiers: `dossier_version: "0.2"`, `failure_class` required.
+- v0.2.2 dossiers: same as v0.2, plus the optional `## Challengeable
+  premises` and `## Open questions` sections. `dossier_version` stays
+  `"0.2"` — the new sections are additive, so nothing already written
+  needs to change and old dossiers validate untouched.
 - v0.1 dossiers (no `failure_class`): still validate and index. `validate`
   prints a note that they're legacy. In `recall` they rank normally
   (signature weighting is derived, so it applies); they are simply skipped
@@ -156,7 +165,18 @@ does everyone else's.
 
 Optional:
 
-7. **Tokens** — estimated tokens spent repeating failed approaches, with a
+7. **Challengeable premises** — the load-bearing assumptions the failed
+   approaches rested on, each phrased so a future reader can ask "what if
+   this is false?" Write them as short, falsifiable claims, not
+   background. A premise list is a list of doors: each one negated is a
+   candidate new approach. (In the 2026-10-11 field test, negating one
+   such premise — "the two tests are nearly independent filters" — is
+   what produced the genuinely new idea.)
+8. **Open questions** — precise questions the failure left open for a
+   future run to aim at. Dead ends often end on an exact unanswered
+   question ("is there a two-sided condition weaker than Pomerance's?");
+   capturing it turns the dossier from a warning into a target.
+9. **Tokens** — estimated tokens spent repeating failed approaches, with a
    one-line method note. Optional because honest estimates aren't always
    available; never invent one.
 
@@ -218,9 +238,12 @@ the roadmap, not in the tool.
 
 ## Writing dossiers that earn their keep
 
-Four lessons from the first real test — a 20-question GPQA Diamond self-test
+Five lessons — the first four from a 20-question GPQA Diamond self-test
 run by the framework's own author (16/20 without recall, 20/20 with it; every
-fix traced to a dossier, zero regressions):
+fix traced to a dossier, zero regressions), the fifth from the first
+foreign-agent field test (Hark, 2026-10-11, on the 10-dossier Baillie–PSW
+bank: the agent avoided all 8 documented dead ends and produced one
+genuinely new idea):
 
 1. **Verify the corrected reasoning independently.** The best dossier in the
    test wasn't derived from the answer key — its author re-checked the
@@ -240,3 +263,14 @@ fix traced to a dossier, zero regressions):
 4. **Confirm the ones that work.** When a retrieved dossier changes a run
    for the better, run `garm confirm`. An unconfirmed bank is a pile of
    claims; a confirmed bank is a track record.
+5. **State your premises so they can be negated, and leave your open
+   questions on the page.** In the field test, the new idea (the D = −7
+   merge) came from negating a premise two dossiers had stated crisply —
+   "the two tests are nearly independent filters" — and the attack was
+   aimed at an open question a third dossier had left behind ("is there
+   a two-sided condition weaker than Pomerance's?"). A dossier that only
+   says what failed teaches avoidance; a dossier whose premises are crisp
+   enough to challenge teaches invention. The `## Challengeable
+   premises` and `## Open questions` sections exist for exactly this.
+   They are optional — one field test is not proof — but they are where
+   the next idea hides.
