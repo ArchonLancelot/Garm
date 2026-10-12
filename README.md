@@ -94,11 +94,14 @@ goes away.
   (16/20), failures autopsied, then answered again with `recall` before
   each (20/20 — every fix traced to a dossier). Caveats: 3 of 4 misses
   were knowledge gaps; n=20, one run. Encouraging shakedown, not proof.
-- **Baillie–PSW (v0.2/v1):** an open 1980 problem attacked across 8
-  passes / 10 dossiers — no pseudoprime found, but zero repeated
-  approaches, and each dossier's "what retrieval would have changed"
-  became the next idea. The mechanism works: write the blocking
-  constraint precisely enough and its inversion falls out.
+- **Baillie–PSW (v0.2 → v0.2.4):** an open 1980 problem attacked across
+  12 passes / 12 dossiers — no pseudoprime found, but zero repeated
+  approaches, and each dossier's blocking constraint, inverted, became
+  the next idea. The v0.2.4 revisit (passes 11–12) ran the bank-to-idea
+  pipeline end to end: imported the old bank, declared premises for the
+  big claims, and generated both new approaches from prior dossiers.
+  Honest gap found: lexical recall missed the most relevant dossier on
+  one query — the mechanism works, the retrieval is still dumb.
 - **Earth–Moon biplanar coloring (v0.2.4):** 13 genuinely different
   methods, 10 premises killed (including a trunk kill on external
   evidence), 12 dossiers — the premise registry's first field trial.
