@@ -1,4 +1,4 @@
-# Dossier format spec — v0.2.3 (Garm)
+# Dossier format spec — v0.2.4 (Garm)
 
 A **dossier** is one hand-written failure autopsy: a Markdown file with a
 small frontmatter block and fixed `##` sections. The analysis inside is
@@ -22,6 +22,16 @@ section left as the scaffold's placeholder guidance text — a template is
 not a dossier; `import` skips byte-identical duplicates instead of
 renaming them; `confirm` rebuilds the index automatically (like `import`
 already did).
+v0.2.4 adds the premise registry and big-route closing: a bank keeps
+`premises.json` — the load-bearing claims whole families of approaches
+assume. Dossiers declare the premises they rest on in an optional
+`## Premises` section (one id per line); `garm premise kill <id> --by
+<dossier>` proves a claim false, killing the premise and everything under
+it transitively. The index records each dossier's premises and a
+`premise_dead` flag; `recall` excludes dead routes by default (listed
+separately) and `--include-dead` brings them back marked. Import/export
+carry the registry along; import merges it without overwriting.
+`dossier_version` stays `"0.2"` — the new section is additive.
 v0.1 dossiers remain valid; they are treated as legacy and simply lack the
 new fields.
 
@@ -152,6 +162,9 @@ does everyone else's.
   sections left as scaffold placeholder text; `import` skips
   byte-identical duplicates; `confirm` auto-rebuilds the index.
   `dossier_version` stays `"0.2"`.
+- v0.2.4: same format as v0.2.3, plus the optional `## Premises` section
+  and the premise registry (`premises.json`) with big-route closing —
+  `garm premise add|kill|list`. `dossier_version` stays `"0.2"`.
 - v0.1 dossiers (no `failure_class`): still validate and index. `validate`
   prints a note that they're legacy. In `recall` they rank normally
   (signature weighting is derived, so it applies); they are simply skipped
@@ -189,6 +202,13 @@ Optional:
 9. **Tokens** — estimated tokens spent repeating failed approaches, with a
    one-line method note. Optional because honest estimates aren't always
    available; never invent one.
+10. **Premises** — premise ids this approach rested on, one per line (see
+    `garm premise list`). A premise is a load-bearing claim a whole
+    family of approaches assumes (registered once per bank with
+    `garm premise add`). If any listed premise is killed
+    (`garm premise kill`), this dossier becomes a *dead route*: `recall`
+    skips it (listing it separately instead), so one closed big route closes
+    a thousand small routes without running them.
 
 Validation (`garm validate`) checks the table and list above, plus one
 honesty check: a *required* section whose content is still exactly the
@@ -224,6 +244,8 @@ Fields:
 | `outcome` | `failed` or `recovered` |
 | `path` | dossier path relative to the indexed directory |
 | `created` | ISO date from frontmatter |
+| `premises` | premise ids from the optional `## Premises` section (v0.2.4) |
+| `premise_dead` | true when any listed premise is dead (transitively) (v0.2.4) |
 
 Because it is fully derived, `index.jsonl` can be deleted and rebuilt without
 losing anything. Rebuilding is byte-identical for unchanged input.
@@ -248,6 +270,13 @@ same things*, weighted toward the matchable parts and toward dossiers that
 have earned trust. It does not understand meaning, and it will miss
 paraphrases. That remains an honest limitation — semantic retrieval is on
 the roadmap, not in the tool.
+
+(v0.2.4) Before ranking, `recall` removes dead routes: dossiers whose
+`## Premises` section lists a premise that is dead (killed directly or via
+a closed big route). They are printed in a separate "dead routes" block with
+the killing premise, so the agent sees what was closed — but they don't
+compete for rank. `recall --include-dead` ranks them anyway, marked
+`[premise-dead]`, for auditing what the big-route close shut down.
 
 ## Writing dossiers that earn their keep
 

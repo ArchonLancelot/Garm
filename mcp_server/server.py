@@ -1,8 +1,9 @@
 """Garm MCP server: dossier tools for any MCP-capable agent.
 
-Thin adapter over the ``garm`` package — validation, indexing, and recall
-scoring all live there. This module only translates MCP tool calls into
-garm function calls and returns JSON-serializable results.
+Thin adapter over the ``garm`` package — validation, indexing, recall
+scoring, and the premise registry all live there. This module only
+translates MCP tool calls into garm function calls and returns
+JSON-serializable results.
 
 Requires the ``mcp`` package (the one non-stdlib part of this repo):
     pip install mcp
@@ -24,6 +25,7 @@ from pathlib import Path
 from mcp.server.mcpserver import MCPServer
 
 from garm import dossier as D
+from garm import premise as PR
 from garm.cli import recall_score
 
 server = MCPServer("garm")
@@ -42,9 +44,12 @@ def _require_bank(d: str | None) -> Path:
 
 def recall_impl(task: str, top: int = 3,
                 failure_class: str | None = None,
+                include_dead: bool = False,
                 dir: str | None = None) -> str:
     """Rank failure dossiers for a task description.
 
+    Dead routes (dossiers resting on a killed premise) are excluded unless
+    ``include_dead`` is true; then they are returned marked premise_dead.
     Returns a JSON array (as text) of ranked dossier objects.
     """
     base = _require_bank(dir)
@@ -54,12 +59,18 @@ def recall_impl(task: str, top: int = 3,
             f"failure_class must be one of {D.VALID_FAILURE_CLASSES}"
         )
     query_keys = D.extract_keywords(task)
+    try:
+        registry = PR.load_registry(base)
+    except ValueError as exc:
+        raise ValueError(str(exc))
     scored: list[dict] = []
     for md in sorted(base.rglob("*.md")):
         if D.validate_dossier(md):
             continue
-        entry = D.build_index_entry(md, base)
+        entry = D.build_index_entry(md, base, registry)
         if failure_class and entry.get("failure_class") != failure_class:
+            continue
+        if entry.get("premise_dead") and not include_dead:
             continue
         total, sig_n, task_n, _fix_b, _ins_b = recall_score(query_keys, entry)
         scored.append({
@@ -76,6 +87,8 @@ def recall_impl(task: str, top: int = 3,
             "failure_class": entry["failure_class"],
             "origin": entry["origin"],
             "path": entry["path"],
+            "premises": entry.get("premises", []),
+            "premise_dead": bool(entry.get("premise_dead")),
         })
     scored.sort(key=lambda s: (-s["score"],
                                -(s["confirmed_fixes"]
@@ -148,6 +161,50 @@ def list_impl(dir: str | None = None) -> str:
     return json.dumps(rows, indent=2)
 
 
+def premise_add_impl(statement: str, depends_on: list[str] | None = None,
+                     dir: str | None = None) -> dict:
+    """Register a load-bearing premise the bank's approaches rest on.
+
+    depends_on names parent premise ids it assumes hold (the big routes
+    it rests on). Returns the new premise id.
+    """
+    base = _bank(dir)
+    base.mkdir(parents=True, exist_ok=True)
+    try:
+        pid = PR.add_premise(base, statement, depends_on=depends_on)
+    except ValueError as exc:
+        raise ValueError(str(exc))
+    return {"id": pid, "statement": statement,
+            "depends_on": depends_on or []}
+
+
+def premise_kill_impl(id: str, by: str, dir: str | None = None,
+                      evidence: str | None = None) -> dict:
+    """Kill a premise: everything resting on it (transitively) dies.
+
+    evidence is how strong the evidence was: "proof", "our-tests", or
+    "outside-work" (optional). Rebuilds the index so dead routes are
+    marked. Returns the premise ids closed and whether it was already
+    killed.
+    """
+    base = _require_bank(dir)
+    try:
+        result = PR.kill_premise(base, id, by, evidence=evidence)
+    except ValueError as exc:
+        raise ValueError(str(exc))
+    n, skipped = D.rebuild_index(base)
+    return {"killed": result["killed"],
+            "already_killed": result["already_killed"],
+            "indexed": n, "skipped_invalid": skipped}
+
+
+def premise_list_impl(dir: str | None = None) -> str:
+    """List registered premises as a JSON array: id, statement, deps,
+    status, killer, and computed dead flag."""
+    base = _require_bank(dir)
+    return json.dumps(PR.list_premises(base), indent=2)
+
+
 server.tool(
     name="garm_recall",
     description=(
@@ -196,6 +253,38 @@ server.tool(
         "failure class, confirm counts, origin, and outcome."
     ),
 )(list_impl)
+
+server.tool(
+    name="garm_premise_add",
+    description=(
+        "Register a load-bearing premise: a claim a whole family of "
+        "approaches assumes (e.g. 'C7[K4] is biplanar'). depends_on names "
+        "the big routes it rests on. Dossiers declare "
+        "their premises in an optional ## Premises section. Returns the "
+        "new premise id."
+    ),
+)(premise_add_impl)
+
+server.tool(
+    name="garm_premise_kill",
+    description=(
+        "Close the big route: mark a premise false. The premise and every premise "
+        "under it dies transitively; the index is rebuilt and recall "
+        "stops suggesting the dead routes. by names the dossier (or note) "
+        "that killed it. evidence is optional: proof, our-tests, or "
+        "outside-work. One closed big route closes a whole family of "
+        "approaches."
+    ),
+)(premise_kill_impl)
+
+server.tool(
+    name="garm_premise_list",
+    description=(
+        "List registered premises as a JSON array: id, statement, "
+        "depends_on, status, killed_by, and the computed dead flag "
+        "(true when killed directly or via a killed ancestor)."
+    ),
+)(premise_list_impl)
 
 
 def main(argv: list[str] | None = None) -> None:

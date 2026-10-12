@@ -47,11 +47,14 @@ Bank resolution per call: explicit `dir` argument → `GARM_DIR` env var →
 
 | Tool | What it does |
 |---|---|
-| `garm_recall(task, top=3, failure_class?, dir?)` | Rank dossiers for a task description. Lexical scoring: signature matches ×2, task matches ×1, confirmed dossiers +up to 5. |
+| `garm_recall(task, top=3, failure_class?, include_dead=false, dir?)` | Rank dossiers for a task description. Lexical scoring: signature matches ×2, task matches ×1, confirmed dossiers +up to 5. Dead routes (premise killed) excluded unless `include_dead` is true — then marked `premise_dead`. |
 | `garm_init(task, agent, failure_class, outcome="failed", dir?)` | Scaffold a dossier, returns its path. Fill the sections, then validate. |
 | `garm_validate(path)` | Validate a dossier. Rejects missing sections and untouched placeholder text. |
 | `garm_confirm(id, insight=false, dir?)` | Bump confirmed_fixes (or confirmed_insights) and rebuild the index. |
 | `garm_list(dir?)` | List all valid dossiers: id, task, class, confirms, origin, outcome. |
+| `garm_premise_add(statement, depends_on?, dir?)` | Register a load-bearing premise; returns its id. |
+| `garm_premise_kill(id, by, dir?)` | Trunk kill: the premise and everything under it dies transitively; index rebuilt. |
+| `garm_premise_list(dir?)` | List premises: id, statement, deps, status, killer, dead flag. |
 
 ## Tests
 

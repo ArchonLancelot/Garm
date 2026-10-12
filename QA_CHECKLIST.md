@@ -1,4 +1,4 @@
-# QA checklist — Garm v0.2.3
+# QA checklist — Garm v0.2.4
 
 Standing rule: nothing ships untested. Run this whole list before any release
 tag or public push. Check each box only after verifying, not before.
@@ -23,10 +23,21 @@ tag or public push. Check each box only after verifying, not before.
       still rename. `confirm` rebuilds the index by itself (no manual
       re-index). `--help` shows the spec version from one constant and
       `recall --help` explains the output columns.
+- [ ] v0.2.4: `premise add` generates `P-YYYYMMDD-NNN` ids and rejects
+      unknown parents/empty statements; `premise list` shows status;
+      `premise kill <id> --by <dossier> [--evidence proof|our-tests|outside-work]`
+      closes the big route and all descendants transitively and re-indexes. A dossier with
+      `## Premises` listing a dead premise indexes with `premise_dead`
+      true; `recall` excludes it (dead-routes block names the killer
+      premise) and `--include-dead` ranks it marked `[premise-dead]`.
+      `export` copies `premises.json`; `import` merges it without
+      overwriting (collision with different statement keeps local).
+      `garm_recall`/`garm_premise_add`/`garm_premise_kill`/
+      `garm_premise_list` live-check over stdio.
 
 ## CLI
 
-- [ ] `python3 -m garm --help` lists all six commands with accurate
+- [ ] `python3 -m garm --help` lists all seven commands with accurate
       one-line descriptions.
 - [ ] `init` requires `--class` (exits 2 without it) and scaffolds a dossier:
       file created, frontmatter prefilled (version 0.2, id, ISO date, agent,
@@ -104,8 +115,10 @@ tag or public push. Check each box only after verifying, not before.
       `python -m unittest discover -s mcp_server/tests -t .` — all green.
 - [ ] On stdlib-only Python the same command skips (8 skipped), never fails.
 - [ ] `/garm:autopsy`-style live check: real MCP client over stdio —
-      initialize, list_tools shows the 5 tools, and a full
-      init → validate → confirm → recall → list round trip works.
+      initialize, list_tools shows the 8 tools, and a full
+      init → validate → confirm → recall → list round trip works, plus
+      premise_add → premise_kill → recall (dead route excluded) →
+      recall(include_dead=true) → premise_list.
 - [ ] `garm_recall`/`garm_list` return one JSON array in a single text
       block (the SDK unrolls Python lists into multiple blocks).
 - [ ] Confirming a scaffold fails cleanly (validate-first, like the CLI).

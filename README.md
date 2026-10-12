@@ -49,6 +49,25 @@ Everything in v0.1, plus what the first real test taught us:
 - v0.1 dossiers keep working — they validate as legacy, rank without the
   new boosts, and nothing is silently upgraded.
 
+## What v0.2.4 adds
+
+Trunk kills. A dossier records *what* was tried; a premise records *what
+the attempts rested on* — the load-bearing claims whole families of
+approaches assume:
+
+- `garm premise add --statement "..." [--depends-on P-...,...]` —
+  register a premise once per bank (lives in `premises.json`). Premises
+  form a tree: a branch declares the big routes it assumes.
+- Dossiers declare their premises in an optional `## Premises` section
+  (one id per line).
+- `garm premise kill <id> --by <dossier>` — prove a claim false. The
+  premise and everything under it die transitively; the index rebuilds
+  and `recall` stops suggesting the dead routes (listed separately
+  instead; `--include-dead` brings them back marked `[premise-dead]`).
+
+One closed big route closes a thousand small routes without running them.
+Import/export carry the registry along (import merges, never overwrites).
+
 ## What v1 adds
 
 Everything above, plus the loop closed inside Claude Code — see
