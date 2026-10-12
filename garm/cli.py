@@ -16,6 +16,7 @@ import sys
 from pathlib import Path
 
 from . import dossier as D
+from . import premise as PR
 
 # Recall scoring: signature-term overlap counts double (the signature is the
 # retrieval key), task-term overlap counts single, and each confirmed fix
@@ -34,6 +35,69 @@ def recall_score(query_keys: list[str], entry: dict) -> tuple[int, int, int, int
     insight_boost = min(int(entry.get("confirmed_insights", 0) or 0), CONFIRMED_BOOST_CAP)
     total = 2 * sig_overlap + task_overlap + fix_boost + insight_boost
     return total, sig_overlap, task_overlap, fix_boost, insight_boost
+
+
+def cmd_premise_add(args: argparse.Namespace) -> int:
+    """Register a load-bearing claim the bank's approaches rest on."""
+    base = Path(args.dir)
+    base.mkdir(parents=True, exist_ok=True)
+    deps = [d.strip() for d in (args.depends_on or "").split(",") if d.strip()]
+    try:
+        pid = PR.add_premise(base, args.statement, depends_on=deps)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    print(f"registered: {pid}")
+    if deps:
+        print(f"  depends on: {', '.join(deps)}")
+    print(f"  {args.statement.strip()}")
+    return 0
+
+
+def cmd_premise_kill(args: argparse.Namespace) -> int:
+    """Kill a premise: every approach resting on it (transitively) dies."""
+    base = Path(args.dir)
+    if not base.is_dir():
+        print(f"error: directory not found: {base}", file=sys.stderr)
+        return 1
+    try:
+        result = PR.kill_premise(base, args.id, args.by,
+                                 evidence=args.evidence)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    if result["already_killed"]:
+        print(f"already killed: {args.id}")
+        return 0
+    killed = result["killed"]
+    ev = f" [evidence: {args.evidence}]" if args.evidence else ""
+    print(f"killed: {args.id} (by {args.by}){ev}")
+    for pid in killed:
+        if pid != args.id:
+            print(f"  inherited kill: {pid}")
+    print(f"closed {len(killed)} premise(s) — re-indexing to mark dead routes")
+    n, skipped = D.rebuild_index(base)
+    print(f"indexed {n} dossiers -> {base / 'index.jsonl'}"
+          + (f" ({skipped} invalid skipped)" if skipped else ""))
+    return 0
+
+
+def cmd_premise_list(args: argparse.Namespace) -> int:
+    base = Path(args.dir)
+    rows = PR.list_premises(base)
+    if not rows:
+        print(f"no premises registered in {base}")
+        return 0
+    print(f"{'ID':16} {'STATUS':7} {'DEPS':22} STATEMENT")
+    for row in rows:
+        status = "KILLED" if row["dead"] else "open"
+        deps = ",".join(row["depends_on"]) if row["depends_on"] else "-"
+        killed_by = f" (by {row['killed_by']})" if row["killed_by"] else ""
+        ev = f" [evidence: {row['evidence']}]" if row["evidence"] else ""
+        stmt = row["statement"]
+        stmt = stmt if len(stmt) <= 60 else stmt[:57] + "..."
+        print(f"{row['id']:16} {status:7} {deps[:22]:22} {stmt}{killed_by}{ev}")
+    return 0
 
 
 def cmd_init(args: argparse.Namespace) -> int:
@@ -114,6 +178,11 @@ def cmd_import(args: argparse.Namespace) -> int:
             print(f"imported: {old_id} -> {new_id} (id collision, renamed)")
     for name, reason in result["skipped"]:
         print(f"skipped: {name} ({reason})", file=sys.stderr)
+    premises = result.get("premises", {}) or {}
+    for pid in premises.get("added", []):
+        print(f"premise imported: {pid}")
+    for pid, reason in premises.get("skipped", []):
+        print(f"premise skipped: {pid} ({reason})", file=sys.stderr)
     n, _ = D.rebuild_index(base)
     print(f"indexed {n} dossiers -> {base / 'index.jsonl'}")
     return 0
@@ -139,16 +208,37 @@ def cmd_recall(args: argparse.Namespace) -> int:
         print(f"error: directory not found: {base}", file=sys.stderr)
         return 1
     query_keys = D.extract_keywords(args.task)
+    try:
+        registry = PR.load_registry(base)
+    except ValueError as exc:
+        print(f"warning: {exc}", file=sys.stderr)
+        registry = {"premises": {}}
     scored = []
+    dead = []
     for md in sorted(base.rglob("*.md")):
         if D.validate_dossier(md):
             continue
-        entry = D.build_index_entry(md, base)
+        entry = D.build_index_entry(md, base, registry)
         if args.failure_class and entry.get("failure_class") != args.failure_class:
+            continue
+        if entry.get("premise_dead") and not args.include_dead:
+            dead.append(entry)
             continue
         total, sig_n, task_n, fix_b, ins_b = recall_score(query_keys, entry)
         overlap = [k for k in query_keys if k in entry["keywords"]]
         scored.append((total, sig_n, task_n, fix_b, ins_b, overlap, entry))
+    if dead:
+        print(f"dead routes (premise killed), skipped: {len(dead)}")
+        for entry in dead:
+            dead_p = PR.dossier_dead_premises(
+                registry, entry.get("premises", []))
+            shown = ", ".join(dead_p[:2]) + ("…" if len(dead_p) > 2 else "")
+            print(f"  - {entry['id']} | {entry['task']} "
+                  f"(premise {shown} dead)")
+        if not scored:
+            print("no live dossiers for this task")
+            return 1
+        print()
     if not scored:
         print(f"no dossiers found in {base}")
         return 1
@@ -159,9 +249,10 @@ def cmd_recall(args: argparse.Namespace) -> int:
         fixes = entry.get("confirmed_fixes", 0)
         insights = entry.get("confirmed_insights", 0)
         origin = entry.get("origin") or "?"
+        dead_mark = " [premise-dead]" if entry.get("premise_dead") else ""
         print(f"{total:3d} | {entry['id']} | {entry['task']} "
               f"[{entry['path']}] (from:{origin} sig:{sig_n} task:{task_n} "
-              f"fix:{fixes} insight:{insights} matched: {matched})")
+              f"fix:{fixes} insight:{insights} matched: {matched}){dead_mark}")
     return 0
 
 
@@ -292,6 +383,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_recall.add_argument("--class", dest="failure_class",
                           choices=D.VALID_FAILURE_CLASSES, default=None,
                           help="only consider dossiers of this failure class")
+    p_recall.add_argument("--include-dead", action="store_true",
+                          help="also rank dead routes (premise killed), "
+                               "marked [premise-dead]; by default they are "
+                               "listed separately and excluded from ranking")
     p_recall.set_defaults(func=cmd_recall)
 
     p_list = sub.add_parser("list", help="compact table of dossiers")
@@ -330,6 +425,60 @@ def build_parser() -> argparse.ArgumentParser:
                           help="output directory (created if missing)")
     p_export.add_argument("--dir", default="dossiers", help="dossier directory")
     p_export.set_defaults(func=cmd_export)
+
+    # v0.2.4: premise registry — close big routes. A premise is a load-bearing
+    # claim a whole family of approaches assumes. Register it once, declare
+    # it in dossiers' ## Premises sections, and kill it when the evidence
+    # says it's false: every approach resting on it (transitively) dies.
+    p_premise = sub.add_parser(
+        "premise",
+        help="register, kill, or list load-bearing premises",
+        description=(
+            "Close big routes. `garm premise add` registers a "
+            "load-bearing claim a family of approaches assumes "
+            "(--depends-on names the big routes it rests on). Dossiers "
+            "declare their premises in an optional ## Premises section. "
+            "`garm premise kill <id> --by <dossier>` marks the claim "
+            "false: the premise and everything under it dies transitively, "
+            "the index is rebuilt, and recall stops suggesting dead "
+            "routes. One closed big route closes a thousand small routes."
+        ),
+    )
+    p_sub = p_premise.add_subparsers(dest="premise_command", required=True,
+                                     metavar="premise-command")
+
+    p_add = p_sub.add_parser("add", help="register a premise")
+    p_add.add_argument("--statement", required=True,
+                       help="the load-bearing claim, e.g. 'C7[K4] is biplanar'")
+    p_add.add_argument("--depends-on", default="",
+                       help="comma-separated parent premise ids this "
+                            "premise assumes hold (the big routes it rests on)")
+    p_add.add_argument("--dir", default="dossiers", help="dossier directory")
+    p_add.set_defaults(func=cmd_premise_add)
+
+    p_kill = p_sub.add_parser(
+        "kill", help="kill a premise (close the big route)",
+        description=(
+            "Close the big route: mark a premise false. The premise and "
+            "everything under it dies transitively; the index is rebuilt "
+            "and recall stops suggesting the dead routes. --by names the "
+            "dossier (or note) that killed it; --evidence records how "
+            "strong the evidence was (proof, our-tests, outside-work)."
+        ))
+    p_kill.add_argument("id", help="premise id, e.g. P-20261011-001")
+    p_kill.add_argument("--by", required=True,
+                        help="dossier id (or short note) that killed it")
+    p_kill.add_argument("--evidence", default=None,
+                        choices=["proof", "our-tests", "outside-work"],
+                        help="how strong the evidence was: proof (we proved "
+                             "it false), our-tests (our experiments ruled it "
+                             "out), outside-work (someone else's result)")
+    p_kill.add_argument("--dir", default="dossiers", help="dossier directory")
+    p_kill.set_defaults(func=cmd_premise_kill)
+
+    p_plist = p_sub.add_parser("list", help="list registered premises")
+    p_plist.add_argument("--dir", default="dossiers", help="dossier directory")
+    p_plist.set_defaults(func=cmd_premise_list)
 
     return parser
 

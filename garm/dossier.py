@@ -22,6 +22,14 @@ v0.2.3: ``validate`` rejects sections left as the scaffold's placeholder
 guidance text (a scaffold is not a dossier — found by the same field
 test's machinery run); ``import`` skips byte-identical duplicates instead
 of renaming them.
+v0.2.4: premise registry (``premises.json``) and big-route closing. A dossier may
+declare an optional ``## Premises`` section listing the premise ids its
+approach rests on (see ``garm/premise.py``). A premise is a load-bearing
+claim a whole family of approaches assumes; closing a big route (a premise
+other premises depend on) closes every premise under it transitively, and
+every dossier resting on a dead premise becomes a dead route. The index
+records each dossier's premises
+and a ``premise_dead`` flag; ``recall`` excludes dead routes by default.
 v0.1 dossiers still validate; they are treated as legacy and simply lack
 the new fields.
 """
@@ -34,7 +42,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
-SPEC_VERSION = "0.2.3"
+SPEC_VERSION = "0.2.4"
 DOSSIER_VERSION = "0.2"
 ACCEPTED_VERSIONS = ("0.1", "0.2")
 
@@ -78,7 +86,7 @@ REQUIRED_SECTIONS = (
 # load-bearing assumptions phrased so a reader can negate them (negating one
 # produced the new idea in the first foreign-agent field test); "Open
 # questions" captures the precise questions the failure left behind.
-OPTIONAL_SECTIONS = ("tokens", "challengeable premises", "open questions")
+OPTIONAL_SECTIONS = ("tokens", "challengeable premises", "open questions", "premises")
 
 _ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 
@@ -278,6 +286,11 @@ _SECTION_GUIDANCE = {
     "skip, and what it would do instead._",
     "Open questions": "_Precise questions this failure left open for a future run to "
     "aim at — not background, but targets._",
+    "Premises": "_Optional: premise ids this approach rested on, one per line "
+    "(see `garm premise list`). A premise is a load-bearing claim a whole "
+    "family of approaches assumes; if any listed premise is killed "
+    "(`garm premise kill`), this dossier becomes a dead route and recall "
+    "skips it._",
     "Tokens": "_Optional: estimated tokens spent repeating failed approaches, "
     "with a one-line method note._",
     "Confidence": "_How confident are you in this autopsy? What would change your mind?_",
@@ -340,6 +353,7 @@ def render_template(
         "Challengeable premises",
         "What retrieval would have changed",
         "Open questions",
+        "Premises",
         "Tokens",
         "Confidence",
     ):
@@ -377,8 +391,17 @@ def _origin_of(frontmatter: dict[str, str]) -> str:
     return frontmatter.get("origin") or frontmatter.get("agent") or ""
 
 
-def build_index_entry(dossier_path: Path, base_dir: Path) -> dict:
-    """Build one index.jsonl record from a validated dossier file."""
+def build_index_entry(dossier_path: Path, base_dir: Path,
+                      registry: dict | None = None) -> dict:
+    """Build one index.jsonl record from a validated dossier file.
+
+    ``registry`` is the loaded premise registry (see ``garm/premise.py``);
+    when given, the entry records the dossier's premise refs and whether
+    any of them is dead (transitively) — the big-route flag that
+    ``recall`` uses to skip dead routes.
+    """
+    from . import premise as P
+
     parsed = read_dossier(dossier_path)
     fm = parsed["frontmatter"]
     sections = parsed["sections"]
@@ -391,6 +414,10 @@ def build_index_entry(dossier_path: Path, base_dir: Path) -> dict:
             break
     task_keywords = extract_keywords(fm["task"])
     sig_keywords = extract_keywords(signature_text)
+    premise_refs = P.parse_premise_refs(sections.get("premises", ""))
+    dead_premises: list[str] = []
+    if registry is not None and premise_refs:
+        dead_premises = P.dossier_dead_premises(registry, premise_refs)
     return {
         "id": fm["id"],
         "version": fm.get("dossier_version", ""),
@@ -405,6 +432,8 @@ def build_index_entry(dossier_path: Path, base_dir: Path) -> dict:
         "outcome": fm["outcome"],
         "path": str(dossier_path.relative_to(base_dir)),
         "created": fm["created"],
+        "premises": premise_refs,
+        "premise_dead": bool(dead_premises),
     }
 
 
@@ -418,13 +447,28 @@ def rebuild_index(base_dir: str | Path) -> tuple[int, int]:
     base = Path(base_dir)
     entries = []
     skipped = 0
+    try:
+        from . import premise as P
+        registry = P.load_registry(base)
+    except ValueError as exc:
+        print(f"warning: {exc}", file=sys.stderr)
+        registry = {"premises": {}}
+    known = set(registry.get("premises", {}))
     for md in sorted(base.rglob("*.md")):
         errors = validate_dossier(md)
         if errors:
             print(f"warning: skipping invalid dossier {md}", file=sys.stderr)
             skipped += 1
             continue
-        entries.append(build_index_entry(md, base))
+        entry = build_index_entry(md, base, registry)
+        unknown = [pid for pid in entry["premises"] if pid not in known]
+        if unknown:
+            print(
+                f"warning: dossier {entry['id']} references unknown "
+                f"premise(s) {', '.join(unknown)} (treated as live)",
+                file=sys.stderr,
+            )
+        entries.append(entry)
     entries.sort(key=lambda e: e["id"])
     index_path = base / "index.jsonl"
     with index_path.open("w", encoding="utf-8") as fh:
@@ -589,7 +633,12 @@ def import_dossiers(
     their destination path (self-import) are skipped.
 
     Returns ``{"imported": [(old_id, new_id, dest_path_str)], "skipped":
-    [(source_name, reason)]}``. Does not re-index; the caller does that.
+    [(source_name, reason)], "premises": {"added": [ids], "skipped":
+    [(id, reason)]}}``. Does not re-index; the caller does that.
+
+    The source bank's ``premises.json`` is merged into the destination's
+    registry when present (never overwrites — colliding ids with different
+    statements are kept local and reported).
     """
     dest = Path(dest_dir)
     dest.mkdir(parents=True, exist_ok=True)
@@ -620,6 +669,17 @@ def import_dossiers(
 
     imported: list[tuple[str, str, str]] = []
     skipped: list[tuple[str, str]] = []
+    premises_merged: dict[str, list] = {"added": [], "skipped": []}
+    if src.is_dir():
+        reg_file = src / "premises.json"
+        if reg_file.exists():
+            from . import premise as P
+
+            try:
+                incoming = json.loads(reg_file.read_text(encoding="utf-8"))
+                premises_merged = P.merge_registry(dest, incoming)
+            except (OSError, json.JSONDecodeError, ValueError) as exc:
+                skipped.append(("premises.json", f"registry not merged: {exc}"))
     for cand_path in candidates:
         errors = validate_dossier(cand_path)
         if errors:
@@ -658,14 +718,19 @@ def import_dossiers(
         taken.add(new_id)
         by_id.setdefault(new_id, final_path)
         imported.append((old_id, new_id, str(final_path)))
-    return {"imported": imported, "skipped": skipped}
+    return {
+        "imported": imported,
+        "skipped": skipped,
+        "premises": premises_merged,
+    }
 
 
 def export_bank(
     src_dir: str | Path, out_dir: str | Path
 ) -> dict[str, list]:
     """Copy validated dossier ``.md`` files (not the derived index.jsonl)
-    to ``out_dir`` for sharing. Returns ``{"copied": [names], "skipped":
+    to ``out_dir`` for sharing. The premise registry (``premises.json``) is
+    copied too, when present. Returns ``{"copied": [names], "skipped":
     [(name, reason)]}``.
     """
     src = Path(src_dir)
@@ -676,6 +741,12 @@ def export_bank(
 
     copied: list[str] = []
     skipped: list[tuple[str, str]] = []
+    reg = src / "premises.json"
+    if reg.exists():
+        (out / "premises.json").write_text(
+            reg.read_text(encoding="utf-8"), encoding="utf-8"
+        )
+        copied.append("premises.json")
     for md in sorted(src.rglob("*.md")):
         if md.name == "index.jsonl":
             continue
