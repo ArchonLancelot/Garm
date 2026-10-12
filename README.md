@@ -1,128 +1,94 @@
-# Garm — v1.1
+# Garm — v0.2.4
 
-**Your agent stops making the same mistake twice. So does everyone else's.**
+**A failure memory for coding agents — so the next attempt is a new idea, not a repeat.**
 
-Named for Garm, the hound at Hel's gate — nothing gets past him twice.
+Named for Garm, the hound at Hel's gate.
 
-A hand-operated failure memory for coding agents. When a session fails a
-certain way, the autopsy gets written down — root cause, the reusable
-pattern, what would have avoided it — so the next session can read it
-*before* it starts generating.
+When an agent fails a certain way, the autopsy gets written down — root
+cause, the reusable pattern, what would have avoided it — and the next
+attempt reads it *before* generating. The point isn't just avoiding
+repeats: each autopsy's blocking constraint, inverted, becomes the next
+idea. Failure memory that generates insight.
 
 Mem0 remembers your name. Garm remembers why you failed.
 
-## The three organs
+*Current release: v0.2.4. Stdlib-only core; MIT.*
 
-Human-like insight for agents, built as three organs:
+## What it does now
 
-1. **Experience** — this repo. Failed approaches are autopsied and remembered;
-   nothing verified is ever lost.
-2. **Taste** — later. A searchable prior over "what kinds of moves work,"
-   grown from accumulated dossiers.
-3. **Restructuring** — later. The capacity to step back and re-derive a
-   problem's framing.
+- **Dossiers** — structured failure autopsies: what was tried, root cause,
+  failure signature, blocking constraint, what retrieval would have
+  changed. `garm init` scaffolds one; `garm validate` checks its
+  structure; `garm index` makes it retrievable.
+- **Recall** — pre-generation retrieval. `garm recall --task "..."` ranks
+  past autopsies by weighted keyword overlap (signature terms count
+  double — the signature is written to be matched on). Lexical, honest,
+  dumb.
+- **Confirm** — when a dossier demonstrably helps a later run,
+  `garm confirm <id>` records it, and confirmed dossiers rank higher.
+  `garm confirm <id> --insight` records the open-ended counterpart: the
+  dossier *generated a new approach*. This is the experience flywheel —
+  the bank learns which autopsies earn their keep.
+- **Premises (big routes)** — register the load-bearing claims whole
+  families of approaches assume (`garm premise add --statement "..."`).
+  Dossiers declare their premises in `## Premises`. Kill one
+  (`garm premise kill <id> --by <dossier> --evidence
+  proof|our-tests|outside-work`) and every route under it closes
+  transitively; `recall` stops suggesting dead routes (listed separately;
+  `--include-dead` audits them). One closed big route closes a thousand
+  small routes without running them.
+- **Shared banks** — `garm import` / `garm export` merge dossier banks
+  between agents (validated on the way in, never overwrites, collisions
+  renamed). `origin` tracks whose failure you're learning from. Negative
+  results have network-effect value; now banks can merge.
+- **Claude Code plugin** (`plugins/garm/`) — a `UserPromptSubmit` hook
+  runs `garm recall` automatically before every prompt and injects
+  matching autopsies as context. Silent on no-match, silent on error —
+  it never breaks the session. `/garm:autopsy` scaffolds, validates,
+  and files the dossier in one command.
+- **MCP server** (`mcp_server/`) — 8 tools over stdio (recall, init,
+  validate, confirm, list, premise add/kill/list), so any MCP-capable
+  agent can drive a dossier bank. Needs `pip install mcp`; the core
+  stays stdlib-only.
 
-v0.1 is Organ 1's minimum: the dossier format plus a CLI to write, validate,
-index, and retrieve dossiers. Taste and Restructuring are research; this is
-the foundation they would be built on.
-
-## What v0.2 contains
-
-Everything in v0.1, plus what the first real test taught us:
-
-- `failure_class` — every dossier says what *kind* of failure it was:
-  `knowledge-gap`, `reasoning-error`, `execution-slip`, `tool-misuse`, or
-  `misread-task`. Different failures need different fixes; now retrieval
-  (`recall --class`) and review can tell them apart.
-- `garm confirm <id>` — when a retrieved dossier demonstrably helps a
-  later run, record it. Confirmed dossiers rank higher in recall. This is
-  the start of the experience flywheel: the bank learns which autopsies
-  earn their keep.
-- `garm confirm <id> --insight` (v0.2.1) — the open-ended counterpart: when
-  a dossier's analysis *generates a new approach* (its blocking constraint,
-  inverted, becomes the next idea), record that instead. For research-style
-  work there is no verifiable "fix" to count; this is the signal that still
-  lets the bank learn which dossiers produce ideas.
-- Smarter recall ranking, still stdlib-only: signature-term overlap counts
-  double (the signature is the retrieval key), task terms single, plus a
-  capped boost per confirmed fix. Documented honestly in `DOSSIER_SPEC.md`.
-- v0.1 dossiers keep working — they validate as legacy, rank without the
-  new boosts, and nothing is silently upgraded.
-
-## What v0.2.4 adds
-
-Trunk kills. A dossier records *what* was tried; a premise records *what
-the attempts rested on* — the load-bearing claims whole families of
-approaches assume:
-
-- `garm premise add --statement "..." [--depends-on P-...,...]` —
-  register a premise once per bank (lives in `premises.json`). Premises
-  form a tree: a branch declares the big routes it assumes.
-- Dossiers declare their premises in an optional `## Premises` section
-  (one id per line).
-- `garm premise kill <id> --by <dossier>` — prove a claim false. The
-  premise and everything under it die transitively; the index rebuilds
-  and `recall` stops suggesting the dead routes (listed separately
-  instead; `--include-dead` brings them back marked `[premise-dead]`).
-
-One closed big route closes a thousand small routes without running them.
-Import/export carry the registry along (import merges, never overwrites).
-
-## What v1 adds
-
-Everything above, plus the loop closed inside Claude Code — see
-[`plugins/garm/`](plugins/garm/) (its own README has install docs):
-
-- **Automatic pre-generation retrieval.** A `UserPromptSubmit` hook runs
-  `garm recall` on every prompt and injects matching autopsies as context
-  before the agent starts. No more remembering to recall; the past shows
-  up on its own. Silent when nothing matches, silent on any error — it
-  never breaks the session.
-- **`/garm:autopsy`.** One slash command scaffolds the dossier, walks
-  through the sections, validates, indexes, and closes the loop on
-  earlier dossiers (`confirm` / `confirm --insight`).
-
-## What v1.1 adds
-
-Shared banks. A negative result's value is saving the *next* person from
-trying it — a local-only bank caps that at one mind:
-
-- `garm import <bank-dir-or-file> --dir dossiers` — pull in another
-  agent's dossiers. Validated on the way in, `id` collisions renamed to
-  `<id>--from-<agent>` (never overwritten), index rebuilt automatically.
-- `garm export --dir dossiers -o bank/` — copy your validated dossiers
-  out for sharing.
-- `origin` — optional provenance label on each dossier (defaults to the
-  `agent`); `recall` and `list` show whose failure you're learning from.
-
-No registry, no server — sharing is files. That's deliberate: v1.1 is the
-format and commands that make a future registry possible.
-
-## What v0.2 changed and why
-
-v0.1 was tested against itself: 20 GPQA Diamond questions, answered once
-with no framework (16/20), failures autopsied into dossiers, then answered
-again with `recall` before each question (20/20 — every fix traced to a
-dossier, zero regressions). Honest caveats from that run: 3 of 4 misses
-were knowledge gaps, not reasoning errors; the retry knew what it had
-missed, so it measured "retry + dossiers," not a blind A/B; n=20, one run.
-Encouraging shakedown, not proof.
-
-Four lessons went straight into v0.2: tag the failure class (the test had
-to invent the distinction ad hoc); track confirmations (4 dossiers proved
-useful — the tool should remember that); weight the signature in ranking
-(it's the part written to be matched on); and write the spec guidance the
-best dossier followed — verify the corrected reasoning independently, quote
-your wrong conclusion verbatim, never put the answer in the dossier.
-
-## What v0.2 deliberately does NOT do
+## What it deliberately does NOT do
 
 - **No auto-capture.** Dossiers are written by hand. Nothing watches your agent.
 - **No auto-autopsy.** Root-cause analysis is the author's job; the tool
   checks structure, not truth.
 - **No embeddings, no semantic search.** `recall` ranks by weighted keyword
-  overlap — lexical, honest, dumb. Semantic retrieval is a later version.
+  overlap — lexical, honest, dumb. Semantic retrieval is on the roadmap.
 - **No network, no accounts, no backend.** Local files. That's the point.
+
+## Where it's going
+
+Human-like insight for agents, built as three organs:
+
+1. **Experience** — this repo, now. Failed approaches are autopsied and
+   remembered; nothing verified is ever lost.
+2. **Taste** — next. A searchable prior over "what kinds of moves work,"
+   grown from accumulated dossier corpora. The confirm/insight signals
+   are its training data.
+3. **Restructuring** — research. The capacity to step back and re-derive
+   a problem's framing.
+
+Also on the roadmap: semantic retrieval, a public bank registry,
+assisted autopsy drafting.
+
+## Field-tested, honestly
+
+- **GPQA Diamond (v0.2):** 20 questions, answered once with no framework
+  (16/20), failures autopsied, then answered again with `recall` before
+  each (20/20 — every fix traced to a dossier). Caveats: 3 of 4 misses
+  were knowledge gaps; n=20, one run. Encouraging shakedown, not proof.
+- **Baillie–PSW (v0.2/v1):** an open 1980 problem attacked across 8
+  passes / 10 dossiers — no pseudoprime found, but zero repeated
+  approaches, and each dossier's "what retrieval would have changed"
+  became the next idea. The mechanism works: write the blocking
+  constraint precisely enough and its inversion falls out.
+- **Earth–Moon biplanar coloring (v0.2.4):** 13 genuinely different
+  methods, 10 premises killed (including a trunk kill on external
+  evidence), 12 dossiers — the premise registry's first field trial.
 
 ## Quickstart
 
@@ -147,6 +113,10 @@ python3 -m garm index --dir dossiers   # refresh after confirming
 # 6. See everything you have
 python3 -m garm list --dir dossiers
 
+# 7. Close a big route: register what the attempts assumed, kill it when false
+python3 -m garm premise add --statement "The API returns JSON" --dir dossiers
+python3 -m garm premise kill P-20261012-001 --by <dossier-id> --evidence our-tests --dir dossiers
+
 # Run the test suite
 python3 -m unittest discover -s tests -t .
 ```
@@ -167,8 +137,8 @@ research note, about an unreleased model, not peer-reviewed. It is the
 
 ## Honesty and caveats
 
-- v0.1 is a **skeleton**. The valuable part — good autopsies — is human (or
-  agent) judgment. The tool does bookkeeping.
+- The valuable part — good autopsies — is human (or agent) judgment. The
+  tool does bookkeeping.
 - `recall` finds dossiers that talk about the same things. It does not
   understand your problem. Read what it returns before trusting it.
 - Validation checks structure, not truth. A dossier can validate clean and
@@ -176,23 +146,12 @@ research note, about an unreleased model, not peer-reviewed. It is the
   exactly this reason — use it.
 - The worked example is synthetic and marked as such.
 
-## Roadmap
+## Spec & tests
 
-- **v1:** the Claude Code plugin (`plugins/garm/`) — automatic
-  pre-generation retrieval via a `UserPromptSubmit` hook, and
-  `/garm:autopsy` for one-command failure capture. The loop is closed:
-  recall happens without remembering to run it.
-- **v1.1 (this release):** shared dossier banks — `garm import`/`export`,
-  `origin` provenance. Negative results have network-effect value; now
-  banks can merge.
-- **MCP server (`mcp_server/`):** the universal adapter — exposes recall,
-  init, validate, confirm, and list as MCP tools over stdio, so any
-  MCP-capable agent (Claude Desktop, Cursor, …) can drive a dossier bank
-  without the Claude Code hook. Needs `pip install mcp`; the core stays
-  stdlib-only. See `mcp_server/README.md`.
-- **Later:** assisted autopsy drafting, semantic retrieval, a public bank
-  registry, and the first Taste experiments grown from real dossier
-  corpora.
+- `DOSSIER_SPEC.md` — the dossier format, index fields, and recall
+  scoring, documented honestly.
+- `QA_CHECKLIST.md` — the per-release verification list. Nothing ships
+  untested.
 
 ## License
 
