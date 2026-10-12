@@ -60,6 +60,16 @@ Mem0 remembers your name. Garm remembers why you failed.
   overlap — lexical, honest, dumb. Semantic retrieval is on the roadmap.
 - **No network, no accounts, no backend.** Local files. That's the point.
 
+## How Garm differs from short-lesson tools
+
+Scar-family tools store short lessons with auto-surfaced reminders:
+what bit you, right where it bit you. Garm stores deep autopsies: why
+the whole hunt failed, with the blocking constraint spelled out so its
+inversion becomes the next idea. And the premise registry kills entire
+families of approaches at once — one dead big route closes a thousand
+small routes without running them. Different jobs: scars record the
+bite, autopsies explain the failed hunt.
+
 ## Where it's going
 
 Human-like insight for agents, built as three organs:
@@ -72,8 +82,11 @@ Human-like insight for agents, built as three organs:
 3. **Restructuring** — research. The capacity to step back and re-derive
    a problem's framing.
 
-Also on the roadmap: semantic retrieval, a public bank registry,
-assisted autopsy drafting.
+Also on the roadmap: semantic retrieval, a public bank registry, and
+**assisted autopsy drafting** — a closing-ceremony step at session end
+that interviews the agent ("what broke? what took too long?") and drafts
+the dossier for human review. The judgment stays manual; the blank page
+goes away.
 
 ## Field-tested, honestly
 
@@ -91,6 +104,10 @@ assisted autopsy drafting.
   evidence), 12 dossiers — the premise registry's first field trial.
 
 ## Quickstart
+
+A dossier takes a few minutes to write: the scaffold handles the
+structure, you supply the judgment. (In Claude Code, `/garm:autopsy`
+does it in one command.)
 
 ```bash
 # 1. Scaffold a dossier for a failed task (class is required — pick honestly)
