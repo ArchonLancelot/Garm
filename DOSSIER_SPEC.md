@@ -1,4 +1,4 @@
-# Dossier format spec — v0.2.5 (Garm)
+# Dossier format spec — v0.2.6 (Garm)
 
 A **dossier** is one hand-written failure autopsy: a Markdown file with a
 small frontmatter block and fixed `##` sections. The analysis inside is
@@ -169,6 +169,11 @@ does everyone else's.
   (assisted drafting — a closing-ceremony interview that writes answers
   into a pre-filled dossier draft) and the matching `garm_autopsy` MCP
   tool. `dossier_version` stays `"0.2"`.
+- v0.2.6: same format as v0.2.5. Retrieval only: hybrid matching —
+  Unicode math symbols are canonicalized to words before tokenizing
+  (`χ` → `chi`, `x²` → `x2`) and query terms expand through a curated
+  synonym map, so paraphrases match. Still lexical, no embeddings.
+  `dossier_version` stays `"0.2"`.
 - v0.1 dossiers (no `failure_class`): still validate and index. `validate`
   prints a note that they're legacy. In `recall` they rank normally
   (signature weighting is derived, so it applies); they are simply skipped
@@ -271,9 +276,21 @@ break by confirmed fixes, then dossier id.
 
 This is still lexical, not semantic. It finds dossiers that *talk about the
 same things*, weighted toward the matchable parts and toward dossiers that
-have earned trust. It does not understand meaning, and it will miss
-paraphrases. That remains an honest limitation — semantic retrieval is on
-the roadmap, not in the tool.
+have earned trust. It does not understand meaning.
+
+(v0.2.6) Hybrid matching, still lexical: before tokenizing, Unicode math
+symbols are canonicalized to words (`χ(G)` → `chi`, `x²` → `x2`,
+`C₇` → `c7`), and each query term expands through a curated synonym map
+(`garm/retrieval.py` — fully visible, hand-maintained), so *paraphrases*
+match: a query for "flaky" finds a dossier about "intermittent"
+failures, "primes" finds "prime". Alias matches show in the output as
+`query~dossier-term`, so the matching stays inspectable. The scoring
+shape is unchanged — only what counts as a match widened. The honest
+limit: the map is a dictionary, not understanding. It closes
+same-meaning-different-words misses; it does not connect *related ideas
+with different vocabularies* (a Wieferich query still won't surface a
+squarefreeness theorem on conceptual grounds alone). Full semantic
+retrieval remains a future opt-in, not the default.
 
 (v0.2.4) Before ranking, `recall` removes dead routes: dossiers whose
 `## Premises` section lists a premise that is dead (killed directly or via

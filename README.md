@@ -1,4 +1,4 @@
-# Garm — v0.2.5
+# Garm — v0.2.6
 
 **A failure memory for coding agents — so the next attempt is a new idea, not a repeat.**
 
@@ -12,7 +12,7 @@ idea. Failure memory that generates insight.
 
 Mem0 remembers your name. Garm remembers why you failed.
 
-*Current release: v0.2.5. Stdlib-only core; MIT.*
+*Current release: v0.2.6. Stdlib-only core; MIT.*
 
 ## What it does now
 
@@ -24,8 +24,11 @@ Mem0 remembers your name. Garm remembers why you failed.
   checks its structure; `garm index` makes it retrievable.
 - **Recall** — pre-generation retrieval. `garm recall --task "..."` ranks
   past autopsies by weighted keyword overlap (signature terms count
-  double — the signature is written to be matched on). Lexical, honest,
-  dumb.
+  double — the signature is written to be matched on). Hybrid since
+  v0.2.6: math symbols are canonicalized to words and query terms expand
+  through a curated synonym map, so paraphrases match ("flaky" finds
+  "intermittent"; alias matches show as `query~dossier-term`). Lexical,
+  honest, dumb — no embeddings.
 - **Confirm** — when a dossier demonstrably helps a later run,
   `garm confirm <id>` records it, and confirmed dossiers rank higher.
   `garm confirm <id> --insight` records the open-ended counterpart: the
@@ -85,7 +88,9 @@ Human-like insight for agents, built as three organs:
 3. **Restructuring** — research. The capacity to step back and re-derive
    a problem's framing.
 
-Also on the roadmap: semantic retrieval and a public bank registry.
+Also on the roadmap: a public bank registry, and full semantic retrieval
+as a future opt-in (the hybrid in v0.2.6 closes paraphrase misses while
+staying stdlib-only; meaning-level matching stays out of the default).
 Shipped in v0.2.5: **assisted autopsy drafting** — `garm autopsy` runs the
 closing-ceremony interview at session end ("what broke? what took too
 long?") and drafts the dossier for review. The judgment stays manual;

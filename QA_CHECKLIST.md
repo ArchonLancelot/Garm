@@ -1,7 +1,35 @@
-# QA checklist — Garm v0.2.5
+# QA checklist — Garm v0.2.6
 
 Standing rule: nothing ships untested. Run this whole list before any release
 tag or public push. Check each box only after verifying, not before.
+
+## v0.2.6: hybrid retrieval
+
+- [ ] `garm/retrieval.py`: `canonicalize_text` maps Greek letters to names,
+      glues super/subscript digits onto word chars (`x²`→`x2`, `C₇`→`C7`),
+      turns operators into words; `aliases_for` returns the curated group
+      or the word itself; `find_match` prefers exact, picks deterministically.
+- [ ] Recall end-to-end: a paraphrase query (`flaky`) finds the
+      `intermittent` dossier with `flaky~intermittent` in `matched:`; exact
+      matches still display bare and rank first; plurals match.
+- [ ] Scoring shape unchanged: 2/sig + 1/task + confirms (cap 5) —
+      verified by the exact-match regression anchor (Chernick drill = 7).
+- [ ] No false positives: unrelated query words match nothing; the synonym
+      map is the only source of aliases (no algorithmic stemming).
+- [ ] `garm index` rebuild stays byte-identical; canonicalized keywords land
+      in `index.jsonl`.
+- [ ] `garm_recall` MCP description + `matched_terms` use the alias display.
+- [ ] Old-vs-new drill on the shipped banks: paraphrase scores move, exact
+      rankings don't invert, dead-route exclusion still works.
+- [ ] Honest-limit drill documented: the hybrid does NOT surface
+      conceptually-related-but-v differently-worded dossiers (Wieferich
+      query vs squarefree theorem) — paraphrase only, not meaning.
+- [ ] `DOSSIER_SPEC.md` retrieval section documents the hybrid and its
+      limit; version policy has the v0.2.6 entry (`dossier_version` stays
+      `"0.2"`).
+- [ ] README: v0.2.6 title/release line, recall bullet, roadmap marks
+      semantic retrieval as future opt-in.
+- [ ] `SPEC_VERSION` is `"0.2.6"` in exactly one place (`garm/dossier.py`).
 
 ## v0.2.5: assisted autopsy drafting
 

@@ -27,6 +27,7 @@ from mcp.server.mcpserver import MCPServer
 from garm import autopsy as AU
 from garm import dossier as D
 from garm import premise as PR
+from garm import retrieval as RU
 from garm.cli import recall_score
 
 server = MCPServer("garm")
@@ -51,7 +52,11 @@ def recall_impl(task: str, top: int = 3,
 
     Dead routes (dossiers resting on a killed premise) are excluded unless
     ``include_dead`` is true; then they are returned marked premise_dead.
-    Returns a JSON array (as text) of ranked dossier objects.
+    v0.2.6: hybrid matching — Unicode math symbols are canonicalized and
+    query terms expand through a curated synonym map (still lexical, no
+    embeddings). ``matched_terms`` shows alias matches as
+    ``query~dossier-term``. Returns a JSON array (as text) of ranked
+    dossier objects.
     """
     base = _require_bank(dir)
     if (failure_class is not None
@@ -79,8 +84,7 @@ def recall_impl(task: str, top: int = 3,
             "task": entry["task"],
             "score": total,
             "signature": entry["signature"],
-            "matched_terms": [k for k in query_keys
-                              if k in entry["keywords"]],
+            "matched_terms": RU.matched_terms(query_keys, entry),
             "signature_matches": sig_n,
             "task_matches": task_n,
             "confirmed_fixes": entry["confirmed_fixes"],
@@ -258,8 +262,11 @@ server.tool(
         "Rank past failure dossiers for a task description. LEXICAL "
         "scoring (keyword overlap, NOT semantic): signature-term matches "
         "count double, task-term matches single, confirmed dossiers gain "
-        "up to +5 each. Returns a JSON array of ranked dossiers with "
-        "scores, signatures, matched terms, and confirm counts."
+        "up to +5 each. v0.2.6 hybrid: math symbols are canonicalized to "
+        "words and query terms expand through a curated synonym map, so "
+        "paraphrases match — still no embeddings. Returns a JSON array of "
+        "ranked dossiers with scores, signatures, matched terms "
+        "(alias matches shown as query~dossier-term), and confirm counts."
     ),
 )(recall_impl)
 
