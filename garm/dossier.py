@@ -30,6 +30,9 @@ other premises depend on) closes every premise under it transitively, and
 every dossier resting on a dead premise becomes a dead route. The index
 records each dossier's premises
 and a ``premise_dead`` flag; ``recall`` excludes dead routes by default.
+v0.2.5: assisted autopsy drafting (``garm/autopsy.py``, ``garm autopsy``):
+a closing-ceremony interview that writes answers into a pre-filled
+dossier draft. The dossier format itself is unchanged.
 v0.1 dossiers still validate; they are treated as legacy and simply lack
 the new fields.
 """
@@ -42,7 +45,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
-SPEC_VERSION = "0.2.4"
+SPEC_VERSION = "0.2.5"
 DOSSIER_VERSION = "0.2"
 ACCEPTED_VERSIONS = ("0.1", "0.2")
 

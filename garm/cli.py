@@ -15,6 +15,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from . import autopsy as AU
 from . import dossier as D
 from . import premise as PR
 
@@ -35,6 +36,42 @@ def recall_score(query_keys: list[str], entry: dict) -> tuple[int, int, int, int
     insight_boost = min(int(entry.get("confirmed_insights", 0) or 0), CONFIRMED_BOOST_CAP)
     total = 2 * sig_overlap + task_overlap + fix_boost + insight_boost
     return total, sig_overlap, task_overlap, fix_boost, insight_boost
+
+
+def cmd_autopsy(args: argparse.Namespace) -> int:
+    """Closing-ceremony interview: answers become a pre-filled draft.
+
+    Flags pre-answer the frontmatter questions; --answers runs the whole
+    thing non-interactively from a JSON file (keys documented in
+    ``garm/autopsy.py``). The draft is printed for review before saving
+    (interactive mode), validated, and indexed when valid. A draft with
+    empty required sections is still written — but it fails validation by
+    design, and the command says exactly which sections need writing.
+    """
+    prefill = {
+        "task": args.task or "",
+        "agent": args.agent or "",
+        "failure_class": args.failure_class or "",
+        "outcome": args.outcome or "",
+    }
+    if args.answers:
+        try:
+            raw = AU.load_answers_file(args.answers)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        # CLI flags override the answers file on conflict.
+        raw = {**raw, **{k: v for k, v in prefill.items() if v}}
+        return AU.run_autopsy(raw, args.dir, interactive=False)
+    if not prefill["task"] and not sys.stdin.isatty():
+        # Piped stdin with no --answers and no --task: the interview can't
+        # run, so say so instead of burning through blank prompts.
+        print("error: no --task and stdin is not a terminal; use --answers "
+              "for non-interactive drafting", file=sys.stderr)
+        return 1
+    raw = AU.collect_interactive(prefill)
+    return AU.run_autopsy(raw, args.dir, interactive=True,
+                          confirm_save=not args.yes)
 
 
 def cmd_premise_add(args: argparse.Namespace) -> int:
@@ -324,6 +361,46 @@ def build_parser() -> argparse.ArgumentParser:
     p_init.add_argument("-o", "--out-dir", default="dossiers",
                         help="directory to write into (created if missing)")
     p_init.set_defaults(func=cmd_init)
+
+    p_autopsy = sub.add_parser(
+        "autopsy",
+        help="assisted drafting: answer questions, get a dossier draft",
+        description=(
+            "Closing-ceremony interview. Asks a short series of sharp "
+            "questions (what broke, what took too long, what assumption "
+            "failed, what retrieval would have changed) and writes the "
+            "answers into a pre-filled dossier draft — no more blank page. "
+            "Nothing is invented: unanswered sections keep the scaffold's "
+            "guidance, and a draft with empty required sections fails "
+            "`validate` by design, naming what still needs writing. The "
+            "draft is printed for review before saving, and indexed when "
+            "valid. --answers runs non-interactively from a JSON file; "
+            "answer keys: task, agent, failure_class, outcome, "
+            "what_was_tried, root_cause, failure_signature, "
+            "blocking_constraint, challengeable_premises, "
+            "what_retrieval_would_have_changed, open_questions, tokens, "
+            "premises, confidence."
+        ),
+    )
+    p_autopsy.add_argument("--task", default="",
+                           help="pre-answer: what was being attempted")
+    p_autopsy.add_argument("--agent", default="",
+                           help="pre-answer: which agent ran it")
+    p_autopsy.add_argument("--class", dest="failure_class", default="",
+                           choices=D.VALID_FAILURE_CLASSES,
+                           help="pre-answer: the failure class")
+    p_autopsy.add_argument("--outcome", default="",
+                           choices=["failed", "recovered"],
+                           help="pre-answer: outcome (default: failed)")
+    p_autopsy.add_argument("--answers", default="",
+                           help="JSON file of answers for non-interactive "
+                                "drafting (keys listed in --help description)")
+    p_autopsy.add_argument("--yes", action="store_true",
+                           help="skip the save confirmation in "
+                                "interactive mode")
+    p_autopsy.add_argument("--dir", default="dossiers",
+                           help="dossier directory (created if missing)")
+    p_autopsy.set_defaults(func=cmd_autopsy)
 
     p_validate = sub.add_parser("validate", help="check a dossier against the spec")
     p_validate.add_argument("file", help="dossier markdown file to check")
