@@ -110,6 +110,9 @@ tag or public push. Check each box only after verifying, not before.
       new count.
 - [ ] `confirm <id> --insight` increments `confirmed_insights` independently
       of `confirmed_fixes`; both survive `validate` and appear in `index`,
+- [ ] `confirm <id> --note "..."` stores `confirm_note_N` (max 140 chars,
+      rejects empty/overlong); file stays valid; note-free confirms add no
+      keys.
       `recall`, and `list`.
 - [ ] `index` rebuilds `index.jsonl`; running it twice is byte-identical;
       entries carry `version`, `failure_class`, `confirmed_fixes`,

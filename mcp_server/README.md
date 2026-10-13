@@ -63,7 +63,7 @@ PYTHONPATH = "/path/to/Garm"
 | `garm_init(task, agent, failure_class, outcome="failed", dir?)` | Scaffold a dossier, returns its path. Fill the sections, then validate. |
 | `garm_autopsy(task, agent, failure_class, outcome="failed", answers?, dir?)` | Assisted drafting: turn interview answers into a dossier draft. `answers` maps answer keys to text (lists allowed for `what_was_tried`/`premises`). Unanswered sections stay as guidance; partial drafts are written but reported invalid with the missing sections named. Nothing is invented. |
 | `garm_validate(path)` | Validate a dossier. Rejects missing sections and untouched placeholder text. |
-| `garm_confirm(id, insight=false, dir?)` | Bump confirmed_fixes (or confirmed_insights) and rebuild the index. |
+| `garm_confirm(id, insight=false, note?, dir?)` | Bump confirmed_fixes (or confirmed_insights) and rebuild the index. Optional one-line note (max 140 chars) stored on the dossier so the track record is auditable. |
 | `garm_list(dir?)` | List all valid dossiers: id, task, class, confirms, origin, outcome. |
 | `garm_premise_add(statement, depends_on?, dir?)` | Register a load-bearing premise; returns its id. |
 | `garm_premise_kill(id, by, dir?)` | Close the big route: the premise and everything under it dies transitively; index rebuilt. |

@@ -74,6 +74,7 @@ confirmed_insights: 0
 | `failure_class` | yes for v0.2 | one of the five classes below |
 | `confirmed_fixes` | no | non-negative integer, default 0 |
 | `confirmed_insights` | no | non-negative integer, default 0 |
+| `confirm_note_N` | no | one-line description (max 140 chars) of what the Nth confirm was for — makes the track record auditable, not just countable |
 | `origin` | no | free text, default = `agent` (provenance for imported banks) |
 
 `outcome: recovered` is for sessions that hit the wall and got past it — the
