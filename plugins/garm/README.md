@@ -5,10 +5,11 @@ A Claude Code plugin that puts Garm's failure memory in the loop:
 - **Pre-generation retrieval (automatic).** A `UserPromptSubmit` hook runs
   `garm recall` on every prompt and injects matching past autopsies as
   context — before the agent starts, not after it repeats the mistake.
-- **Failure capture (one command).** `/garm:autopsy` scaffolds a dossier,
-  walks through the sections, validates, indexes, and closes the loop on
-  earlier dossiers. The analysis is still the agent's job; the tool
-  enforces structure.
+- **Failure capture (one command).** `/garm:autopsy` runs the assisted
+  interview: it answers the closing-ceremony questions from the session,
+  drafts the dossier (answers go in verbatim — nothing invented),
+  validates, indexes, and closes the loop on earlier dossiers. The
+  analysis is still the agent's job; the tool enforces structure.
 
 Stdlib-only Python, local-only, no network, no model calls, $0 per hook
 run. A hook that errors degrades to silence — it never breaks the session.
