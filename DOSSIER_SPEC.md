@@ -1,4 +1,4 @@
-# Dossier format spec — v0.2.4 (Garm)
+# Dossier format spec — v0.2.5 (Garm)
 
 A **dossier** is one hand-written failure autopsy: a Markdown file with a
 small frontmatter block and fixed `##` sections. The analysis inside is
@@ -165,6 +165,10 @@ does everyone else's.
 - v0.2.4: same format as v0.2.3, plus the optional `## Premises` section
   and the premise registry (`premises.json`) with big-route closing —
   `garm premise add|kill|list`. `dossier_version` stays `"0.2"`.
+- v0.2.5: same format as v0.2.4. New tooling only: `garm autopsy`
+  (assisted drafting — a closing-ceremony interview that writes answers
+  into a pre-filled dossier draft) and the matching `garm_autopsy` MCP
+  tool. `dossier_version` stays `"0.2"`.
 - v0.1 dossiers (no `failure_class`): still validate and index. `validate`
   prints a note that they're legacy. In `recall` they rank normally
   (signature weighting is derived, so it applies); they are simply skipped
@@ -316,3 +320,32 @@ genuinely new idea):
    premises` and `## Open questions` sections exist for exactly this.
    They are optional — one field test is not proof — but they are where
    the next idea hides.
+
+## Assisted drafting (v0.2.5)
+
+`garm autopsy` is a closing-ceremony interview: it asks a short series of
+sharp questions (what broke, what took too long, what assumption failed,
+what retrieval would have changed) and writes the answers into a
+pre-filled dossier draft. The flags `--task`, `--agent`, `--class`, and
+`--outcome` pre-answer the frontmatter questions; `--answers <file.json>`
+runs the whole thing non-interactively (answer keys: `task`, `agent`,
+`failure_class`, `outcome`, `what_was_tried`, `root_cause`,
+`failure_signature`, `blocking_constraint`, `challengeable_premises`,
+`what_retrieval_would_have_changed`, `open_questions`, `tokens`,
+`premises`, `confidence`); `--yes` skips the save confirmation in
+interactive mode. The matching MCP tool is `garm_autopsy`.
+
+Honesty rules, enforced by construction:
+
+- The tool never invents analysis. Answers go into the sections verbatim
+  (multi-line attempt lists become bullets; premise ids are normalized to
+  one per line). Anything unanswered keeps the scaffold's guidance text.
+- A draft with empty *required* sections is still written — but it fails
+  `validate` by design, and the command names exactly which sections
+  still need writing. The draft is indexed only when it validates.
+- Optional sections left blank are stripped from the draft entirely, so
+  the file contains only real content.
+- The draft is printed for review before saving (interactive mode), and
+  premise ids are checked against the registry — unknown or malformed
+  ids produce loud warnings, because a typo'd id silently opts out of
+  the dead-route machinery.

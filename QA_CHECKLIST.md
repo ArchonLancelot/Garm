@@ -1,7 +1,33 @@
-# QA checklist — Garm v0.2.4
+# QA checklist — Garm v0.2.5
 
 Standing rule: nothing ships untested. Run this whole list before any release
 tag or public push. Check each box only after verifying, not before.
+
+## v0.2.5: assisted autopsy drafting
+
+- [ ] `garm autopsy --answers` full flow: valid draft written, answers
+      verbatim in their sections, `what_was_tried` list becomes bullets,
+      blank optional sections stripped, file validates clean, index rebuilt.
+- [ ] `garm autopsy --answers` partial flow: draft still written, exit 1,
+      report names exactly the sections that need writing, nothing indexed.
+- [ ] Bad answers rejected before anything is written: unknown keys, bad
+      `failure_class`, missing `task`, malformed JSON.
+- [ ] Premise refs: comma-joined ids normalized to one per line; unknown ids
+      warn loudly on stderr but are kept; malformed ids warn too.
+- [ ] Interactive flow (mocked stdin): full interview → draft printed →
+      save confirm `y` writes+indexes; `n` discards the draft; immediate EOF
+      aborts cleanly with no crash and nothing written.
+- [ ] `garm autopsy` with no `--task`/`--answers` on a non-tty errors with a
+      pointer to `--answers` instead of hanging on prompts.
+- [ ] `garm_autopsy` MCP tool: 9 tools registered; full answers → valid +
+      indexed; partial → invalid with named sections; bad class/keys raise.
+- [ ] `DOSSIER_SPEC.md` documents the answer keys and the four honesty
+      rules; version policy has the v0.2.5 entry (`dossier_version` stays
+      `"0.2"` — format unchanged).
+- [ ] README: v0.2.5 title/release line, autopsy in capabilities + quickstart,
+      roadmap marks assisted drafting shipped, "No auto-autopsy" bullet still
+      accurate (interview formats answers; diagnosis stays the author's job).
+- [ ] `SPEC_VERSION` is `"0.2.5"` in exactly one place (`garm/dossier.py`).
 
 ## Format and spec
 

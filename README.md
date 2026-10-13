@@ -1,4 +1,4 @@
-# Garm — v0.2.4
+# Garm — v0.2.5
 
 **A failure memory for coding agents — so the next attempt is a new idea, not a repeat.**
 
@@ -12,14 +12,16 @@ idea. Failure memory that generates insight.
 
 Mem0 remembers your name. Garm remembers why you failed.
 
-*Current release: v0.2.4. Stdlib-only core; MIT.*
+*Current release: v0.2.5. Stdlib-only core; MIT.*
 
 ## What it does now
 
 - **Dossiers** — structured failure autopsies: what was tried, root cause,
   failure signature, blocking constraint, what retrieval would have
-  changed. `garm init` scaffolds one; `garm validate` checks its
-  structure; `garm index` makes it retrievable.
+  changed. `garm init` scaffolds one; `garm autopsy` interviews you at
+  session end and drafts one from your answers (closing-ceremony style —
+  nothing invented, you review before it's saved); `garm validate`
+  checks its structure; `garm index` makes it retrievable.
 - **Recall** — pre-generation retrieval. `garm recall --task "..."` ranks
   past autopsies by weighted keyword overlap (signature terms count
   double — the signature is written to be matched on). Lexical, honest,
@@ -46,8 +48,8 @@ Mem0 remembers your name. Garm remembers why you failed.
   matching autopsies as context. Silent on no-match, silent on error —
   it never breaks the session. `/garm:autopsy` scaffolds, validates,
   and files the dossier in one command.
-- **MCP server** (`mcp_server/`) — 8 tools over stdio (recall, init,
-  validate, confirm, list, premise add/kill/list), so any MCP-capable
+- **MCP server** (`mcp_server/`) — 9 tools over stdio (recall, init,
+  validate, confirm, list, premise add/kill/list, autopsy), so any MCP-capable
   agent can drive a dossier bank. Needs `pip install mcp`; the core
   stays stdlib-only.
 
@@ -55,7 +57,8 @@ Mem0 remembers your name. Garm remembers why you failed.
 
 - **No auto-capture.** Dossiers are written by hand. Nothing watches your agent.
 - **No auto-autopsy.** Root-cause analysis is the author's job; the tool
-  checks structure, not truth.
+  checks structure, not truth. (`garm autopsy` interviews you and formats
+  your answers — it never diagnoses on its own.)
 - **No embeddings, no semantic search.** `recall` ranks by weighted keyword
   overlap — lexical, honest, dumb. Semantic retrieval is on the roadmap.
 - **No network, no accounts, no backend.** Local files. That's the point.
@@ -82,11 +85,11 @@ Human-like insight for agents, built as three organs:
 3. **Restructuring** — research. The capacity to step back and re-derive
    a problem's framing.
 
-Also on the roadmap: semantic retrieval, a public bank registry, and
-**assisted autopsy drafting** — a closing-ceremony step at session end
-that interviews the agent ("what broke? what took too long?") and drafts
-the dossier for human review. The judgment stays manual; the blank page
-goes away.
+Also on the roadmap: semantic retrieval and a public bank registry.
+Shipped in v0.2.5: **assisted autopsy drafting** — `garm autopsy` runs the
+closing-ceremony interview at session end ("what broke? what took too
+long?") and drafts the dossier for review. The judgment stays manual;
+the blank page is gone.
 
 ## Field-tested, honestly
 
@@ -110,7 +113,9 @@ goes away.
 
 A dossier takes a few minutes to write: the scaffold handles the
 structure, you supply the judgment. (In Claude Code, `/garm:autopsy`
-does it in one command.)
+does it in one command. Prefer an interview to a blank page?
+`python3 -m garm autopsy --dir dossiers` asks the questions and drafts
+the dossier from your answers.)
 
 ```bash
 # 0. (Optional) Start from a field-tested bank instead of an empty one

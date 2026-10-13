@@ -24,6 +24,7 @@ from pathlib import Path
 
 from mcp.server.mcpserver import MCPServer
 
+from garm import autopsy as AU
 from garm import dossier as D
 from garm import premise as PR
 from garm.cli import recall_score
@@ -205,6 +206,52 @@ def premise_list_impl(dir: str | None = None) -> str:
     return json.dumps(PR.list_premises(base), indent=2)
 
 
+def autopsy_impl(task: str, agent: str, failure_class: str,
+                 outcome: str = "failed",
+                 answers: dict | None = None,
+                 dir: str | None = None) -> dict:
+    """Assisted autopsy drafting: turn answers into a dossier draft.
+
+    ``answers`` maps answer keys to text (lists of strings allowed for
+    what_was_tried and premises): root_cause, failure_signature,
+    blocking_constraint, what_was_tried, challengeable_premises,
+    what_retrieval_would_have_changed, open_questions, tokens, premises,
+    confidence. Sections left out stay as guidance; a draft with empty
+    required sections is still written but reported invalid with the
+    sections named. Nothing is invented — answers go in verbatim.
+    """
+    base = _bank(dir)
+    raw = {"task": task, "agent": agent, "failure_class": failure_class,
+           "outcome": outcome, **(answers or {})}
+    try:
+        raw = AU.validate_raw_answers(raw)
+    except ValueError as exc:
+        raise ValueError(str(exc))
+    frontmatter, sections = AU.normalize_answers(raw)
+    premises_text = sections.get("premises", "")
+    warnings = AU._check_premise_refs(premises_text, base)
+    path, _text = AU.write_draft(
+        task=frontmatter["task"], agent=frontmatter["agent"],
+        outcome=frontmatter["outcome"],
+        failure_class=frontmatter["failure_class"],
+        sections=sections, out_dir=base,
+    )
+    errors = D.validate_dossier(path)
+    indexed = 0
+    skipped = 0
+    if not errors:
+        indexed, skipped = D.rebuild_index(base)
+    return {
+        "path": str(path),
+        "id": path.stem,
+        "valid": not errors,
+        "errors": errors,
+        "indexed": indexed,
+        "skipped_invalid": skipped,
+        "warnings": warnings,
+    }
+
+
 server.tool(
     name="garm_recall",
     description=(
@@ -285,6 +332,22 @@ server.tool(
         "(true when killed directly or via a killed ancestor)."
     ),
 )(premise_list_impl)
+
+server.tool(
+    name="garm_autopsy",
+    description=(
+        "Assisted autopsy drafting: turn interview answers into a "
+        "pre-filled dossier draft, closing-ceremony style. answers maps "
+        "answer keys to text: root_cause, failure_signature, "
+        "blocking_constraint, what_was_tried (string or list), "
+        "challengeable_premises, what_retrieval_would_have_changed, "
+        "open_questions, tokens, premises (string or list of premise "
+        "ids), confidence. Unanswered sections stay as guidance; a draft "
+        "with empty required sections is written but reported invalid "
+        "with the missing sections named. Nothing is invented — answers "
+        "go in verbatim."
+    ),
+)(autopsy_impl)
 
 
 def main(argv: list[str] | None = None) -> None:

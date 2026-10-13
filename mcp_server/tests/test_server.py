@@ -46,11 +46,11 @@ def filled_dossier(path: Path, task: str = "Example task",
 
 @unittest.skipUnless(MCP_AVAILABLE, "mcp package not installed")
 class ServerRegistrationTest(unittest.TestCase):
-    def test_eight_tools_registered(self):
+    def test_nine_tools_registered(self):
         tools = asyncio.run(S.server.list_tools())
         names = sorted(t.name for t in tools)
         self.assertEqual(names, [
-            "garm_confirm", "garm_init", "garm_list",
+            "garm_autopsy", "garm_confirm", "garm_init", "garm_list",
             "garm_premise_add", "garm_premise_kill", "garm_premise_list",
             "garm_recall", "garm_validate",
         ])
@@ -125,6 +125,61 @@ class ServerRoundTripTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 S.init_impl(task="t", agent="a",
                             failure_class="vibes", dir=tmp)
+
+    def test_autopsy_full_draft_validates_and_indexes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bank = Path(tmp) / "bank"
+            r = S.autopsy_impl(
+                task="Avoid retry storms", agent="mcp-agent",
+                failure_class="knowledge-gap",
+                answers={
+                    "what_was_tried": ["Doubled the timeout", "Added jitter"],
+                    "root_cause": "Thundering herd on deploy.",
+                    "failure_signature": "retry-storm: deploy-time latency "
+                                         "spike -> pull this.",
+                    "blocking_constraint": "No backoff in the deploy path.",
+                    "what_retrieval_would_have_changed": "Skip the timeout "
+                                                         "doubling; add "
+                                                         "jitter first.",
+                    "confidence": "High.",
+                },
+                dir=str(bank))
+            self.assertTrue(r["valid"], r["errors"])
+            self.assertEqual(r["indexed"], 1)
+            self.assertEqual(r["warnings"], [])
+            # answers landed verbatim; blank optionals stripped
+            sections = D.read_dossier(r["path"])["sections"]
+            self.assertIn("- Doubled the timeout", sections["what was tried"])
+            self.assertNotIn("open questions", sections)
+            # recall finds the drafted dossier
+            hits = json.loads(
+                S.recall_impl("retry storm deploy", dir=str(bank)))
+            self.assertEqual(len(hits), 1)
+            self.assertEqual(hits[0]["id"], r["id"])
+
+    def test_autopsy_partial_draft_reports_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bank = Path(tmp) / "bank"
+            r = S.autopsy_impl(
+                task="Half autopsy", agent="mcp-agent",
+                failure_class="reasoning-error",
+                answers={"root_cause": "Something broke."},
+                dir=str(bank))
+            self.assertFalse(r["valid"])
+            self.assertTrue(r["errors"])
+            self.assertEqual(r["indexed"], 0)
+            self.assertTrue(Path(r["path"]).exists(),
+                            "draft is still written for finishing")
+
+    def test_autopsy_rejects_bad_answers(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(ValueError):
+                S.autopsy_impl(task="t", agent="a",
+                               failure_class="vibes", dir=tmp)
+            with self.assertRaises(ValueError):
+                S.autopsy_impl(task="t", agent="a",
+                               failure_class="knowledge-gap",
+                               answers={"bogus_key": "x"}, dir=tmp)
 
     def test_confirm_unknown_id_raises(self):
         with tempfile.TemporaryDirectory() as tmp:
