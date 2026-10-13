@@ -129,12 +129,17 @@ def validate_impl(path: str) -> dict:
 
 
 def confirm_impl(id: str, insight: bool = False,
-                 dir: str | None = None) -> dict:
-    """Confirm a dossier: bump confirmed_fixes (or insights) and re-index."""
+                 dir: str | None = None,
+                 note: str | None = None) -> dict:
+    """Confirm a dossier: bump confirmed_fixes (or insights) and re-index.
+
+    note is optional: a one-line description of what the fix was (max 140
+    chars), stored on the dossier so the track record is auditable.
+    """
     base = _require_bank(dir)
     field = "confirmed_insights" if insight else "confirmed_fixes"
     try:
-        path, new_count = D.confirm_dossier(base, id, field=field)
+        path, new_count = D.confirm_dossier(base, id, field=field, note=note)
     except ValueError as exc:
         raise ValueError(str(exc))
     n, skipped = D.rebuild_index(base)
@@ -315,7 +320,9 @@ server.tool(
         "Confirm a dossier by id: bump its confirmed_fixes counter and "
         "rebuild the index. Use insight=true instead when the dossier's "
         "analysis generated a genuinely new idea in open-ended work with "
-        "no verifiable fix."
+        "no verifiable fix. note is optional: a one-line description of "
+        "what the fix was (max 140 chars), stored on the dossier so the "
+        "track record is auditable."
     ),
 )(confirm_impl)
 

@@ -57,6 +57,8 @@ ACCEPTED_VERSIONS = ("0.1", "0.2")
 
 # Confirmable counters. confirmed_fixes: the dossier prevented a specific
 # repeat / fixed a verifiable failure. confirmed_insights: the dossier's
+CONFIRM_NOTE_MAX_LEN = 140
+_NOTE_RE = re.compile(r"^confirm_note_(\d+):")
 # analysis generated a new approach (its blocking constraint, inverted,
 # became the next idea) — for open-ended work with no verifiable "fix".
 CONFIRM_FIELDS = ("confirmed_fixes", "confirmed_insights")
@@ -542,7 +544,8 @@ _CONFIRMED_RE = re.compile(r'^(confirmed_fixes|confirmed_insights):\s*"?(\d+)"?\
 
 
 def confirm_dossier(
-    base_dir: str | Path, dossier_id: str, field: str = "confirmed_fixes"
+    base_dir: str | Path, dossier_id: str, field: str = "confirmed_fixes",
+    note: str | None = None,
 ) -> tuple[Path, int]:
     """Record that a retrieved dossier earned its keep in a later run.
 
@@ -551,18 +554,34 @@ def confirm_dossier(
     ``"confirmed_insights"`` (the dossier's analysis generated a new
     approach — for open-ended work with no verifiable "fix").
 
+    ``note`` is optional: a one-line description of what the fix was
+    (max 140 chars), stored as ``confirm_note_N`` in the frontmatter so the
+    track record is auditable — a reader can see what each confirm was for,
+    not just the count. Notes don't verify the fix; they document the
+    claim.
+
     Finds the dossier whose frontmatter ``id`` matches, increments the
     counter (adding the field at 1 if absent), rewrites the file, and
     re-validates it. Returns (path, new_count).
 
     Raises ValueError if zero or more than one dossier matches the id,
-    if ``field`` is not a known confirm field, or if the file fails
-    validation after the bump.
+    if ``field`` is not a known confirm field, if the note is empty or too
+    long, or if the file fails validation after the bump.
     """
     if field not in CONFIRM_FIELDS:
         raise ValueError(
             f"unknown confirm field {field!r}; must be one of {CONFIRM_FIELDS}"
         )
+    clean_note: str | None = None
+    if note is not None:
+        clean_note = " ".join(str(note).split())
+        if not clean_note:
+            raise ValueError("confirm note must not be empty")
+        if len(clean_note) > CONFIRM_NOTE_MAX_LEN:
+            raise ValueError(
+                f"confirm note is {len(clean_note)} chars; "
+                f"max is {CONFIRM_NOTE_MAX_LEN}"
+            )
     base = Path(base_dir)
     matches: list[Path] = []
     for md in sorted(base.rglob("*.md")):
@@ -601,6 +620,13 @@ def confirm_dossier(
             break
     if not replaced:
         lines.insert(close_idx, f"{field}: 1\n")
+    if clean_note is not None:
+        max_n = 0
+        for i in range(1, close_idx):
+            m = _NOTE_RE.match(lines[i].strip())
+            if m:
+                max_n = max(max_n, int(m.group(1)))
+        lines.insert(close_idx, f'confirm_note_{max_n + 1}: "{clean_note}"\n')
     path.write_text("".join(lines), encoding="utf-8")
     errors = validate_dossier(path)
     if errors:

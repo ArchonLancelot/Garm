@@ -66,6 +66,7 @@ class ServerRegistrationTest(unittest.TestCase):
         confirm_props = tools["garm_confirm"].input_schema["properties"]
         self.assertIn("id", confirm_props)
         self.assertIn("insight", confirm_props)
+        self.assertIn("note", confirm_props)
         kill_props = tools["garm_premise_kill"].input_schema["properties"]
         self.assertIn("evidence", kill_props)
         reopen_props = tools["garm_premise_reopen"].input_schema["properties"]

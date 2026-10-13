@@ -161,6 +161,47 @@ class ConfirmTest(unittest.TestCase):
             self.assertEqual(r.returncode, 1)
             self.assertIn("no dossier", r.stderr)
 
+    def test_confirm_note_stored_and_valid(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = make_dossier(tmp, "d.md", "Task one")
+            did = dossier_id(p)
+            r = garm("confirm", did, "--note", "used the WAL-mode test",
+                     "--dir", "dossiers", cwd=tmp)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn("confirmed fixes: 1", r.stdout)
+            text = p.read_text(encoding="utf-8")
+            self.assertIn('confirm_note_1: "used the WAL-mode test"', text)
+            r = garm("confirm", did, "--note", "second fix",
+                     "--dir", "dossiers", cwd=tmp)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            text = p.read_text(encoding="utf-8")
+            self.assertIn('confirm_note_2: "second fix"', text)
+            self.assertIn("confirmed_fixes: 2", text)
+            self.assertEqual(D.validate_dossier(p), [])
+
+    def test_confirm_note_rejects_empty_and_long(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = make_dossier(tmp, "d.md", "Task one")
+            did = dossier_id(p)
+            r = garm("confirm", did, "--note", "   ",
+                     "--dir", "dossiers", cwd=tmp)
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("must not be empty", r.stderr)
+            r = garm("confirm", did, "--note", "x" * 141,
+                     "--dir", "dossiers", cwd=tmp)
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("max is 140", r.stderr)
+            # exactly 140 is fine
+            r = garm("confirm", did, "--note", "x" * 140,
+                     "--dir", "dossiers", cwd=tmp)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            # no note -> no note keys, counter still bumps
+            r = garm("confirm", did, "--dir", "dossiers", cwd=tmp)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            text = p.read_text(encoding="utf-8")
+            self.assertNotIn("confirm_note_2", text)
+            self.assertIn("confirmed_fixes: 2", text)
+
     def test_confirm_insight_increments_separately(self):
         with tempfile.TemporaryDirectory() as tmp:
             p = make_dossier(tmp, "d.md", "Task one")
