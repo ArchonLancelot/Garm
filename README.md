@@ -45,7 +45,7 @@ Mem0 remembers your name. Garm remembers why you failed.
   runs `garm recall` before every prompt and injects matching autopsies.
   Silent on no-match, silent on error. `/garm:autopsy` scaffolds,
   validates, and files the dossier in one command.
-- **MCP server** (`mcp_server/`) — 9 tools over stdio, so any MCP-capable
+- **MCP server** (`mcp_server/`) — 10 tools over stdio, so any MCP-capable
   agent can drive a dossier bank. Needs `pip install mcp`; the core
   stays stdlib-only.
 
@@ -91,8 +91,10 @@ staying stdlib-only; meaning-level matching stays out of the default).
 
 - **GPQA Diamond (v0.2):** 20 questions, answered once with no framework
   (16/20), failures autopsied, then answered again with `recall` before
-  each (20/20 — every fix traced to a dossier). Caveats: 3 of 4 misses
-  were knowledge gaps; n=20, one run. Encouraging shakedown, not proof.
+  each (20/20 — every fix traced to a dossier). Caveats: same 20 questions
+  re-asked, so this measures recall of autopsied answers, not transfer to
+  new questions; 3 of 4 misses were knowledge gaps; n=20, one run.
+  Encouraging shakedown, not proof.
 - **Baillie–PSW (v0.2 → v0.2.4):** an open 1980 problem attacked across
   12 passes / 12 dossiers — no pseudoprime found, but zero repeated
   approaches, and each dossier's blocking constraint, inverted, became

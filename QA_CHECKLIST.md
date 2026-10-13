@@ -88,6 +88,11 @@ tag or public push. Check each box only after verifying, not before.
       overwriting (collision with different statement keeps local).
       `garm_recall`/`garm_premise_add`/`garm_premise_kill`/
       `garm_premise_list` live-check over stdio.
+- [ ] premise reopen: `premise reopen <id> --by <who>` revives a killed premise
+      and everything that died only because of its kill (independently
+      killed premises stay dead); `premise list` shows `reopened by`;
+      recall includes the revived routes again. `garm_premise_reopen`
+      registered (10 tools).
 
 ## CLI
 

@@ -27,7 +27,9 @@ v0.2.4 adds the premise registry and big-route closing: a bank keeps
 assume. Dossiers declare the premises they rest on in an optional
 `## Premises` section (one id per line); `garm premise kill <id> --by
 <dossier>` proves a claim false, killing the premise and everything under
-it transitively. The index records each dossier's premises and a
+it transitively. A bad kill is recoverable: `garm premise reopen <id>
+--by <who>` revives the premise and everything that died only because of
+its kill (independently killed premises stay dead). The index records each dossier's premises and a
 `premise_dead` flag; `recall` excludes dead routes by default (listed
 separately) and `--include-dead` brings them back marked. Import/export
 carry the registry along; import merges it without overwriting.

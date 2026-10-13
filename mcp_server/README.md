@@ -1,7 +1,7 @@
 # Garm MCP server
 
 The universal adapter: exposes the Garm loop — recall, init, autopsy,
-validate, confirm, list, premise add/kill/list — as MCP tools (9 total),
+validate, confirm, list, premise add/kill/reopen/list — as MCP tools (10 total),
 so **any** MCP-capable agent (Claude Desktop, Cursor, Windsurf, Codex CLI,
 …) can use a dossier bank directly. No Claude Code hook required.
 
@@ -67,7 +67,8 @@ PYTHONPATH = "/path/to/Garm"
 | `garm_list(dir?)` | List all valid dossiers: id, task, class, confirms, origin, outcome. |
 | `garm_premise_add(statement, depends_on?, dir?)` | Register a load-bearing premise; returns its id. |
 | `garm_premise_kill(id, by, dir?)` | Close the big route: the premise and everything under it dies transitively; index rebuilt. |
-| `garm_premise_list(dir?)` | List premises: id, statement, deps, status, killer, dead flag. |
+| `garm_premise_reopen(id, by, dir?)` | Reopen a killed premise: it and its inherited kills come back; independently killed premises stay dead; index rebuilt. |
+| `garm_premise_list(dir?)` | List premises: id, statement, deps, status, killer, reopened-by, dead flag. |
 
 ## Tests
 
