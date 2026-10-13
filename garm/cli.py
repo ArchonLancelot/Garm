@@ -18,6 +18,7 @@ from pathlib import Path
 from . import autopsy as AU
 from . import dossier as D
 from . import premise as PR
+from . import retrieval as RU
 
 # Recall scoring: signature-term overlap counts double (the signature is the
 # retrieval key), task-term overlap counts single, and each confirmed fix
@@ -27,15 +28,15 @@ CONFIRMED_BOOST_CAP = 5
 
 
 def recall_score(query_keys: list[str], entry: dict) -> tuple[int, int, int, int, int]:
-    """Return (total, sig_overlap, task_overlap, fix_boost, insight_boost)."""
-    sig_keys = entry.get("sig_keywords") or []
-    task_keys = [k for k in entry.get("keywords", []) if k not in sig_keys]
-    sig_overlap = sum(1 for k in query_keys if k in sig_keys)
-    task_overlap = sum(1 for k in query_keys if k in task_keys)
-    fix_boost = min(int(entry.get("confirmed_fixes", 0) or 0), CONFIRMED_BOOST_CAP)
-    insight_boost = min(int(entry.get("confirmed_insights", 0) or 0), CONFIRMED_BOOST_CAP)
-    total = 2 * sig_overlap + task_overlap + fix_boost + insight_boost
-    return total, sig_overlap, task_overlap, fix_boost, insight_boost
+    """Return (total, sig_overlap, task_overlap, fix_boost, insight_boost).
+
+    v0.2.6: alias-aware via garm/retrieval.py — a query key matches when it
+    or any curated synonym appears in the dossier's keywords. Same shape
+    as before; kept here (and not moved) because the MCP server imports it
+    from this module.
+    """
+    return RU.score(query_keys, entry,
+                    confirmed_boost_cap=CONFIRMED_BOOST_CAP)
 
 
 def cmd_autopsy(args: argparse.Namespace) -> int:
@@ -262,7 +263,7 @@ def cmd_recall(args: argparse.Namespace) -> int:
             dead.append(entry)
             continue
         total, sig_n, task_n, fix_b, ins_b = recall_score(query_keys, entry)
-        overlap = [k for k in query_keys if k in entry["keywords"]]
+        overlap = RU.matched_terms(query_keys, entry)
         scored.append((total, sig_n, task_n, fix_b, ins_b, overlap, entry))
     if dead:
         print(f"dead routes (premise killed), skipped: {len(dead)}")
@@ -441,8 +442,14 @@ def build_parser() -> argparse.ArgumentParser:
             "key), task-term overlap counts single, and each confirmed fix "
             "or confirmed insight adds 1 point up to a cap of "
             f"{CONFIRMED_BOOST_CAP} each. Ties break by total confirms, then "
-            "dossier id. This is still keyword overlap, NOT semantic "
-            "similarity: no embeddings, no model calls, no magic. It finds "
+            "dossier id. v0.2.6 hybrid: before matching, Unicode math "
+            "symbols are canonicalized to words (χ → chi, x² → x 2) and "
+            "query terms expand through a curated synonym map (flaky ~ "
+            "intermittent, primes ~ prime), so paraphrases match. This is "
+            "still keyword overlap, NOT semantic similarity: no embeddings, "
+            "no model calls, no magic — just smarter matching, and the "
+            "`matched:` column shows alias matches as `query~dossier-term` "
+            "so you can see exactly what matched. It finds "
             "dossiers that talk about the same things, weighted toward the "
             "parts of a dossier written to be matched on and toward dossiers "
             "with a track record. "

@@ -33,6 +33,10 @@ and a ``premise_dead`` flag; ``recall`` excludes dead routes by default.
 v0.2.5: assisted autopsy drafting (``garm/autopsy.py``, ``garm autopsy``):
 a closing-ceremony interview that writes answers into a pre-filled
 dossier draft. The dossier format itself is unchanged.
+v0.2.6: hybrid retrieval (``garm/retrieval.py``): recall matches over
+canonicalized text (Unicode math symbols become words) with a curated
+synonym map, so paraphrases match. Still lexical — no embeddings. The
+dossier format itself is unchanged.
 v0.1 dossiers still validate; they are treated as legacy and simply lack
 the new fields.
 """
@@ -45,7 +49,9 @@ import sys
 from datetime import date
 from pathlib import Path
 
-SPEC_VERSION = "0.2.5"
+from . import retrieval as RU
+
+SPEC_VERSION = "0.2.6"
 DOSSIER_VERSION = "0.2"
 ACCEPTED_VERSIONS = ("0.1", "0.2")
 
@@ -116,11 +122,13 @@ def slugify(text: str, max_len: int = 50) -> str:
 def extract_keywords(text: str) -> list[str]:
     """Lexical keywords: lowercased alphanumeric tokens, stopwords removed.
 
-    This is deliberately dumb. v0.1 ranking is keyword overlap, not semantic
-    similarity — no embeddings, no model calls.
+    v0.2.6: Unicode math symbols are canonicalized to words first (see
+    ``garm/retrieval.py``), so "χ(G)" and "chromatic number" share
+    keywords. Still no embeddings, no model calls — just smarter
+    tokenizing. Synonym expansion happens at match time, not here.
     """
     keywords: list[str] = []
-    for token in re.findall(r"[a-z0-9]+", text.lower()):
+    for token in re.findall(r"[a-z0-9]+", RU.canonicalize_text(text).lower()):
         if len(token) < 2 or token in _STOPWORDS or token in keywords:
             continue
         keywords.append(token)
