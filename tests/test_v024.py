@@ -232,8 +232,11 @@ class DossierPremisesTest(unittest.TestCase):
             d1 = write_dossier(tmp, "d", "one.md", s1, "2026-10-11-one")
             s2 = dict(FILLED)  # no premises section: unaffected
             d2 = write_dossier(tmp, "d", "two.md", s2, "2026-10-11-two")
+            s3 = dict(FILLED)
+            s3["premises"] = f"- {branch}"
+            d3 = write_dossier(tmp, "d", "three.md", s3, "2026-10-11-three")
             n, skipped = D.rebuild_index(Path(tmp) / "d")
-            self.assertEqual((n, skipped), (2, 0))
+            self.assertEqual((n, skipped), (3, 0))
             entries = {
                 e["id"]: e
                 for e in D.load_index_entries(Path(tmp) / "d" / "index.jsonl")
@@ -247,8 +250,52 @@ class DossierPremisesTest(unittest.TestCase):
                 e["id"]: e
                 for e in D.load_index_entries(Path(tmp) / "d" / "index.jsonl")
             }
-            self.assertTrue(entries["2026-10-11-one"]["premise_dead"])
+            # the killer dossier stays live: it holds the proof of falsity
+            self.assertFalse(entries["2026-10-11-one"]["premise_dead"])
             self.assertFalse(entries["2026-10-11-two"]["premise_dead"])
+            # a dossier that merely rested on the dead premise stays buried
+            self.assertTrue(entries["2026-10-11-three"]["premise_dead"])
+
+    def test_killer_exemption_needs_dossier_id(self):
+        # free-text killer: no dossier matches, so nothing is exempt
+        with tempfile.TemporaryDirectory() as tmp:
+            trunk = PR.add_premise(tmp + "/d", "trunk holds",
+                                   created="2026-10-11")
+            s1 = dict(FILLED)
+            s1["premises"] = f"- {trunk}"
+            write_dossier(tmp, "d", "one.md", s1, "2026-10-11-one")
+            PR.kill_premise(Path(tmp) / "d", trunk, "a hand-written note")
+            n, _ = D.rebuild_index(Path(tmp) / "d")
+            entries = {
+                e["id"]: e
+                for e in D.load_index_entries(Path(tmp) / "d" / "index.jsonl")
+            }
+            self.assertTrue(entries["2026-10-11-one"]["premise_dead"])
+
+    def test_killer_exemption_covers_inherited_kills(self):
+        # dossier kills the trunk; it lists the grandchild branch: exempt
+        # via the "inherited from" marker naming the trunk it killed
+        with tempfile.TemporaryDirectory() as tmp:
+            trunk = PR.add_premise(tmp + "/d", "trunk holds",
+                                   created="2026-10-11")
+            mid = PR.add_premise(tmp + "/d", "mid holds",
+                                 depends_on=[trunk], created="2026-10-11")
+            leaf = PR.add_premise(tmp + "/d", "leaf holds",
+                                  depends_on=[mid], created="2026-10-11")
+            s1 = dict(FILLED)
+            s1["premises"] = f"- {leaf}"
+            write_dossier(tmp, "d", "one.md", s1, "2026-10-11-one")
+            s2 = dict(FILLED)
+            s2["premises"] = f"- {leaf}"
+            write_dossier(tmp, "d", "two.md", s2, "2026-10-11-two")
+            PR.kill_premise(Path(tmp) / "d", trunk, "2026-10-11-one")
+            n, _ = D.rebuild_index(Path(tmp) / "d")
+            entries = {
+                e["id"]: e
+                for e in D.load_index_entries(Path(tmp) / "d" / "index.jsonl")
+            }
+            self.assertFalse(entries["2026-10-11-one"]["premise_dead"])
+            self.assertTrue(entries["2026-10-11-two"]["premise_dead"])
 
     def test_index_warns_on_unknown_premise(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -275,7 +322,7 @@ class RecallDeadRouteTest(unittest.TestCase):
         s["premises"] = f"- {trunk}"
         write_dossier(tmp, "d", "dead.md", s, "2026-10-11-dead")
         write_dossier(tmp, "d", "live.md", dict(FILLED), "2026-10-11-live")
-        PR.kill_premise(Path(tmp) / "d", trunk, "2026-10-11-dead")
+        PR.kill_premise(Path(tmp) / "d", trunk, "2026-10-11-killer")
         D.rebuild_index(Path(tmp) / "d")
 
     def test_recall_excludes_dead_by_default(self):
@@ -300,6 +347,27 @@ class RecallDeadRouteTest(unittest.TestCase):
                      "--include-dead", cwd=tmp)
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             self.assertIn("[premise-dead]", r.stdout)
+
+    def test_recall_includes_killer_dossier(self):
+        # the dossier that killed the premise stays in default recall:
+        # it holds the proof of falsity, not just a dead approach
+        with tempfile.TemporaryDirectory() as tmp:
+            trunk = PR.add_premise(tmp + "/d", "trunk holds",
+                                   created="2026-10-11")
+            s = dict(FILLED)
+            s["failure signature"] = "Name: partition-search. If you see X, stop."
+            s["premises"] = f"- {trunk}"
+            write_dossier(tmp, "d", "killer.md", s, "2026-10-11-killer")
+            write_dossier(tmp, "d", "live.md", dict(FILLED), "2026-10-11-live")
+            PR.kill_premise(Path(tmp) / "d", trunk, "2026-10-11-killer")
+            D.rebuild_index(Path(tmp) / "d")
+            r = garm("recall", "--task", "partition search", "--dir", "d",
+                     cwd=tmp)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            ranked = [l for l in r.stdout.splitlines()
+                      if l.strip() and l.strip()[0].isdigit()]
+            self.assertTrue(any("2026-10-11-killer" in l for l in ranked))
+            self.assertNotIn("dead routes", r.stdout)
 
     def test_cli_premise_roundtrip(self):
         with tempfile.TemporaryDirectory() as tmp:

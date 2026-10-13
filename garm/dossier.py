@@ -430,7 +430,8 @@ def build_index_entry(dossier_path: Path, base_dir: Path,
     premise_refs = P.parse_premise_refs(sections.get("premises", ""))
     dead_premises: list[str] = []
     if registry is not None and premise_refs:
-        dead_premises = P.dossier_dead_premises(registry, premise_refs)
+        dead_premises = P.dossier_dead_premises(registry, premise_refs,
+                                               dossier_id=fm["id"])
     return {
         "id": fm["id"],
         "version": fm.get("dossier_version", ""),

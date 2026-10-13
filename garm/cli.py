@@ -299,7 +299,8 @@ def cmd_recall(args: argparse.Namespace) -> int:
         print(f"dead routes (premise killed), skipped: {len(dead)}")
         for entry in dead:
             dead_p = PR.dossier_dead_premises(
-                registry, entry.get("premises", []))
+                registry, entry.get("premises", []),
+                dossier_id=entry.get("id"))
             shown = ", ".join(dead_p[:2]) + ("…" if len(dead_p) > 2 else "")
             print(f"  - {entry['id']} | {entry['task']} "
                   f"(premise {shown} dead)")

@@ -310,9 +310,46 @@ def parse_premise_refs(section_text: str) -> list[str]:
     return refs
 
 
-def dossier_dead_premises(data: dict, premise_refs: list[str]) -> list[str]:
-    """The subset of a dossier's premise refs that are dead (transitively)."""
-    return [pid for pid in premise_refs if is_dead(data, pid)]
+def dossier_dead_premises(
+    data: dict, premise_refs: list[str], dossier_id: str | None = None
+) -> list[str]:
+    """The subset of a dossier's premise refs that are dead (transitively).
+
+    A dossier is never a dead route via a premise it killed itself: when
+    ``dossier_id`` matches the recorded killer — directly, or as the top
+    of the kill whose inheritance closed the premise — that premise is
+    skipped. The autopsy that proved a claim false stays live; everything
+    else resting on the false claim stays buried.
+    """
+    dead = []
+    for pid in premise_refs:
+        if not is_dead(data, pid):
+            continue
+        if dossier_id is not None and _killed_by_dossier(data, pid,
+                                                         dossier_id):
+            continue
+        dead.append(pid)
+    return dead
+
+
+def _killed_by_dossier(data: dict, premise_id: str, dossier_id: str) -> bool:
+    """True if ``dossier_id`` recorded the kill of ``premise_id``.
+
+    Covers direct kills (``killed_by`` is the dossier id) and inherited
+    kills: the ``inherited from <top>`` marker always names the top premise
+    of the kill, so one hop to the top's own ``killed_by`` settles it.
+    """
+    premises = data.get("premises", {})
+    entry = premises.get(premise_id)
+    if entry is None:
+        return False
+    if entry.get("killed_by") == dossier_id:
+        return True
+    marker = entry.get("killed_by", "")
+    if isinstance(marker, str) and marker.startswith("inherited from "):
+        top = premises.get(marker[len("inherited from "):])
+        return bool(top) and top.get("killed_by") == dossier_id
+    return False
 
 
 def merge_registry(
