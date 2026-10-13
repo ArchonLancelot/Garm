@@ -16,43 +16,36 @@ Mem0 remembers your name. Garm remembers why you failed.
 
 ## What it does now
 
-- **Dossiers** — structured failure autopsies: what was tried, root cause,
+- **Dossiers** — structured failure autopsies (what was tried, root cause,
   failure signature, blocking constraint, what retrieval would have
-  changed. `garm init` scaffolds one; `garm autopsy` interviews you at
-  session end and drafts one from your answers (closing-ceremony style —
-  nothing invented, you review before it's saved); `garm validate`
-  checks its structure; `garm index` makes it retrievable.
-- **Recall** — pre-generation retrieval. `garm recall --task "..."` ranks
+  changed). `garm init` scaffolds one; `garm autopsy` interviews you and
+  drafts one from your answers — nothing invented, you review before it's
+  saved. `garm validate` checks structure; `garm index` makes it
+  retrievable.
+- **Recall** — pre-generation retrieval: `garm recall --task "..."` ranks
   past autopsies by weighted keyword overlap (signature terms count
-  double — the signature is written to be matched on). Hybrid since
-  v0.2.6: math symbols are canonicalized to words and query terms expand
-  through a curated synonym map, so paraphrases match ("flaky" finds
-  "intermittent"; alias matches show as `query~dossier-term`). Lexical,
-  honest, dumb — no embeddings.
+  double). Hybrid since v0.2.6 — math symbols become words, query terms
+  expand through a curated synonym map, so paraphrases match ("flaky"
+  finds "intermittent"; alias matches show as `query~dossier-term`).
+  Lexical, honest, dumb.
 - **Confirm** — when a dossier demonstrably helps a later run,
-  `garm confirm <id>` records it, and confirmed dossiers rank higher.
-  `garm confirm <id> --insight` records the open-ended counterpart: the
-  dossier *generated a new approach*. This is the experience flywheel —
-  the bank learns which autopsies earn their keep.
+  `garm confirm <id>` records it and confirmed dossiers rank higher.
+  `--insight` records the open-ended counterpart: the dossier *generated
+  a new approach*. The bank learns which autopsies earn their keep.
 - **Premises (big routes)** — register the load-bearing claims whole
   families of approaches assume (`garm premise add --statement "..."`).
-  Dossiers declare their premises in `## Premises`. Kill one
-  (`garm premise kill <id> --by <dossier> --evidence
-  proof|our-tests|outside-work`) and every route under it closes
-  transitively; `recall` stops suggesting dead routes (listed separately;
-  `--include-dead` audits them). One closed big route closes a thousand
-  small routes without running them.
+  Dossiers declare theirs in `## Premises`; `garm premise kill <id> --by
+  <dossier> --evidence proof|our-tests|outside-work` closes the big route
+  and everything under it transitively. One closed big route closes a
+  thousand small routes without running them.
 - **Shared banks** — `garm import` / `garm export` merge dossier banks
   between agents (validated on the way in, never overwrites, collisions
-  renamed). `origin` tracks whose failure you're learning from. Negative
-  results have network-effect value; now banks can merge.
+  renamed). `origin` tracks whose failure you're learning from.
 - **Claude Code plugin** (`plugins/garm/`) — a `UserPromptSubmit` hook
-  runs `garm recall` automatically before every prompt and injects
-  matching autopsies as context. Silent on no-match, silent on error —
-  it never breaks the session. `/garm:autopsy` scaffolds, validates,
-  and files the dossier in one command.
-- **MCP server** (`mcp_server/`) — 9 tools over stdio (recall, init,
-  validate, confirm, list, premise add/kill/list, autopsy), so any MCP-capable
+  runs `garm recall` before every prompt and injects matching autopsies.
+  Silent on no-match, silent on error. `/garm:autopsy` scaffolds,
+  validates, and files the dossier in one command.
+- **MCP server** (`mcp_server/`) — 9 tools over stdio, so any MCP-capable
   agent can drive a dossier bank. Needs `pip install mcp`; the core
   stays stdlib-only.
 
@@ -63,7 +56,9 @@ Mem0 remembers your name. Garm remembers why you failed.
   checks structure, not truth. (`garm autopsy` interviews you and formats
   your answers — it never diagnoses on its own.)
 - **No embeddings, no semantic search.** `recall` ranks by weighted keyword
-  overlap — lexical, honest, dumb. Semantic retrieval is on the roadmap.
+  overlap — lexical, honest, dumb. (v0.2.6 added a synonym map and math
+  symbol canonicalization so paraphrases match; meaning-level retrieval
+  stays a future opt-in, never the default.)
 - **No network, no accounts, no backend.** Local files. That's the point.
 
 ## How Garm differs from short-lesson tools
@@ -89,12 +84,8 @@ Human-like insight for agents, built as three organs:
    a problem's framing.
 
 Also on the roadmap: a public bank registry, and full semantic retrieval
-as a future opt-in (the hybrid in v0.2.6 closes paraphrase misses while
+as a future opt-in (the v0.2.6 hybrid closes paraphrase misses while
 staying stdlib-only; meaning-level matching stays out of the default).
-Shipped in v0.2.5: **assisted autopsy drafting** — `garm autopsy` runs the
-closing-ceremony interview at session end ("what broke? what took too
-long?") and drafts the dossier for review. The judgment stays manual;
-the blank page is gone.
 
 ## Field-tested, honestly
 
@@ -109,7 +100,9 @@ the blank page is gone.
   pipeline end to end: imported the old bank, declared premises for the
   big claims, and generated both new approaches from prior dossiers.
   Honest gap found: lexical recall missed the most relevant dossier on
-  one query — the mechanism works, the retrieval is still dumb.
+  one query. v0.2.6 answered it with hybrid retrieval — paraphrases now
+  match (documented limit: related ideas with different vocabulary still
+  need semantic search).
 - **Earth–Moon biplanar coloring (v0.2.4):** 13 genuinely different
   methods, 10 premises killed (including a trunk kill on external
   evidence), 12 dossiers — the premise registry's first field trial.
@@ -140,8 +133,8 @@ python3 -m garm index --dir dossiers
 python3 -m garm recall --task "checkout test fails intermittently" --dir dossiers
 
 # 5. When a retrieved dossier demonstrably helps a later run, confirm it
+#    (the index rebuilds automatically)
 python3 -m garm confirm <dossier-id> --dir dossiers
-python3 -m garm index --dir dossiers   # refresh after confirming
 
 # 6. See everything you have
 python3 -m garm list --dir dossiers
