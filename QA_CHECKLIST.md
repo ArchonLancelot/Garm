@@ -98,6 +98,10 @@ tag or public push. Check each box only after verifying, not before.
       (direct kill or `inherited from` chain); other dossiers resting on
       the dead premise still are. `recall` ranks the killer dossier by
       default.
+- [ ] kill --by validation: a `--by` shaped like a dossier id
+      (`YYYY-MM-DD-...`) is rejected when no dossier with that id is in
+      the bank (typo guard); plain-text notes still accepted. Premise
+      stays open on rejection.
 
 ## CLI
 

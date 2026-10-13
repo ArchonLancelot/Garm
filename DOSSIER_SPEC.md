@@ -27,7 +27,11 @@ v0.2.4 adds the premise registry and big-route closing: a bank keeps
 assume. Dossiers declare the premises they rest on in an optional
 `## Premises` section (one id per line); `garm premise kill <id> --by
 <dossier>` proves a claim false, killing the premise and everything under
-it transitively. A bad kill is recoverable: `garm premise reopen <id>
+it transitively. `--by` takes a dossier id or a short free-text note; a
+`--by` shaped like a dossier id (date-prefixed, as generated ids always
+are) must name a dossier actually in the bank — anything else is rejected
+as a likely typo instead of being stored silently. A bad kill is
+recoverable: `garm premise reopen <id>
 --by <who>` revives the premise and everything that died only because of
 its kill (independently killed premises stay dead). The index records each dossier's premises and a
 `premise_dead` flag; `recall` excludes dead routes by default (listed
