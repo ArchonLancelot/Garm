@@ -93,6 +93,11 @@ tag or public push. Check each box only after verifying, not before.
       killed premises stay dead); `premise list` shows `reopened by`;
       recall includes the revived routes again. `garm_premise_reopen`
       registered (10 tools).
+- [ ] killer-dossier exemption: a dossier whose id is the recorded killer
+      of a dead premise it lists is NOT a dead route via that premise
+      (direct kill or `inherited from` chain); other dossiers resting on
+      the dead premise still are. `recall` ranks the killer dossier by
+      default.
 
 ## CLI
 

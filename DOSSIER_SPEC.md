@@ -301,6 +301,11 @@ a closed big route). They are printed in a separate "dead routes" block with
 the killing premise, so the agent sees what was closed — but they don't
 compete for rank. `recall --include-dead` ranks them anyway, marked
 `[premise-dead]`, for auditing what the big-route close shut down.
+Exception: the dossier that recorded the kill is never a dead route via
+that premise — its `killed_by` names the dossier itself (directly, or via
+the `inherited from` marker). The autopsy that proved a claim false holds
+the proof of falsity, so it stays live; everything else resting on the
+false claim stays buried.
 
 ## Writing dossiers that earn their keep
 
