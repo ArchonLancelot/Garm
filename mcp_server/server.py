@@ -351,7 +351,8 @@ server.tool(
         "Close the big route: mark a premise false. The premise and every premise "
         "under it dies transitively; the index is rebuilt and recall "
         "stops suggesting the dead routes. by names the dossier (or note) "
-        "that killed it. evidence is optional: proof, our-tests, or "
+        "that killed it; a by shaped like a dossier id must match a dossier "
+        "in the bank. evidence is optional: proof, our-tests, or "
         "outside-work. One closed big route closes a whole family of "
         "approaches."
     ),

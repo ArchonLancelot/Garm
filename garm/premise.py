@@ -39,6 +39,10 @@ REGISTRY_VERSION = "0.2.4"
 
 PREMISE_ID_RE = re.compile(r"^P-\d{8}-\d{3}$")
 
+# Generated dossier ids are always "<date>-<slug>", so a --by value with
+# this shape is meant to be a dossier id, not a free-text note.
+DOSSIER_ID_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-")
+
 VALID_STATUSES = ("open", "killed")
 
 # How strong the evidence was when a premise died. Plain words:
@@ -185,6 +189,25 @@ def descendants(data: dict, premise_id: str) -> set[str]:
     return found
 
 
+def _bank_dossier_ids(base_dir: str | Path) -> set[str]:
+    """Ids of the dossiers currently in the bank, from their frontmatter."""
+    from .dossier import split_frontmatter
+
+    ids: set[str] = set()
+    d = Path(base_dir)
+    if not d.is_dir():
+        return ids
+    for md in d.glob("*.md"):
+        try:
+            fm, _ = split_frontmatter(md.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        did = (fm.get("id") or "").strip()
+        if did:
+            ids.add(did)
+    return ids
+
+
 def kill_premise(
     base_dir: str | Path,
     premise_id: str,
@@ -204,6 +227,13 @@ def kill_premise(
     """
     if not killed_by or not str(killed_by).strip():
         raise ValueError("killed_by must name the dossier (or note) that killed it")
+    by = str(killed_by).strip()
+    if DOSSIER_ID_RE.match(by) and by not in _bank_dossier_ids(base_dir):
+        raise ValueError(
+            f"killed_by looks like a dossier id ({by!r}) but no dossier "
+            f"with that id is in this bank — check for a typo, or pass a "
+            f"plain-text note instead"
+        )
     if evidence is not None and evidence not in VALID_EVIDENCE:
         raise ValueError(
             f"evidence must be one of {VALID_EVIDENCE}: "

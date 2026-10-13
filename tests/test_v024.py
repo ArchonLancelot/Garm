@@ -256,6 +256,26 @@ class DossierPremisesTest(unittest.TestCase):
             # a dossier that merely rested on the dead premise stays buried
             self.assertTrue(entries["2026-10-11-three"]["premise_dead"])
 
+    def test_kill_rejects_dossier_shaped_by_with_no_match(self):
+        # a --by that looks like a dossier id must name a real dossier:
+        # catches truncated/pasted ids instead of storing them silently
+        with tempfile.TemporaryDirectory() as tmp:
+            pid = PR.add_premise(tmp, "x", created="2026-10-11")
+            with self.assertRaises(ValueError):
+                PR.kill_premise(tmp, pid, "2026-10-11-no-such-dossier")
+            data = PR.load_registry(tmp)
+            self.assertEqual(data["premises"][pid]["status"], "open")
+
+    def test_kill_accepts_matching_dossier_id_and_plain_note(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p1 = PR.add_premise(tmp + "/d", "x", created="2026-10-11")
+            p2 = PR.add_premise(tmp + "/d", "y", created="2026-10-11")
+            write_dossier(tmp, "d", "one.md", dict(FILLED), "2026-10-11-one")
+            res = PR.kill_premise(Path(tmp) / "d", p1, "2026-10-11-one")
+            self.assertEqual(res["killed"], [p1])
+            res = PR.kill_premise(Path(tmp) / "d", p2, "lab meeting note")
+            self.assertEqual(res["killed"], [p2])
+
     def test_killer_exemption_needs_dossier_id(self):
         # free-text killer: no dossier matches, so nothing is exempt
         with tempfile.TemporaryDirectory() as tmp:
@@ -322,7 +342,7 @@ class RecallDeadRouteTest(unittest.TestCase):
         s["premises"] = f"- {trunk}"
         write_dossier(tmp, "d", "dead.md", s, "2026-10-11-dead")
         write_dossier(tmp, "d", "live.md", dict(FILLED), "2026-10-11-live")
-        PR.kill_premise(Path(tmp) / "d", trunk, "2026-10-11-killer")
+        PR.kill_premise(Path(tmp) / "d", trunk, "field-test-note")
         D.rebuild_index(Path(tmp) / "d")
 
     def test_recall_excludes_dead_by_default(self):
