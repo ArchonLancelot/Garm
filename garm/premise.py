@@ -233,6 +233,47 @@ def kill_premise(
     return {"killed": sorted(killed), "already_killed": False}
 
 
+def reopen_premise(
+    base_dir: str | Path,
+    premise_id: str,
+    reopened_by: str,
+) -> dict:
+    """Reopen a killed premise. Returns {"reopened": [ids revived],
+    "already_open": bool}.
+
+    The premise itself goes back to open, plus every descendant that died
+    *only* because of this kill (marked ``inherited from <id>`` at kill
+    time). A descendant killed independently keeps its own killer and stays
+    dead. Reopening a live premise is a no-op that reports ``already_open``.
+    """
+    if not reopened_by or not str(reopened_by).strip():
+        raise ValueError("reopened_by must name who is reopening it")
+    data = load_registry(base_dir)
+    premises = data.get("premises", {})
+    entry = premises.get(premise_id)
+    if entry is None:
+        raise ValueError(f"unknown premise {premise_id!r}")
+    if entry.get("status") != "killed":
+        return {"reopened": [], "already_open": True}
+    marker = f"inherited from {premise_id}"
+    who = str(reopened_by).strip()
+    entry["status"] = "open"
+    entry.pop("killed_by", None)
+    entry.pop("evidence", None)
+    entry["reopened_by"] = who
+    reopened = {premise_id}
+    for pid in descendants(data, premise_id):
+        child = premises[pid]
+        if child.get("status") == "killed" and child.get("killed_by") == marker:
+            child["status"] = "open"
+            child.pop("killed_by", None)
+            child.pop("evidence", None)
+            child["reopened_by"] = who
+            reopened.add(pid)
+    save_registry(base_dir, data)
+    return {"reopened": sorted(reopened), "already_open": False}
+
+
 def list_premises(base_dir: str | Path) -> list[dict]:
     """All premises as dicts with computed ``dead`` flag, sorted by id."""
     data = load_registry(base_dir)
@@ -247,6 +288,7 @@ def list_premises(base_dir: str | Path) -> list[dict]:
                 "status": entry.get("status", "open"),
                 "killed_by": entry.get("killed_by"),
                 "evidence": entry.get("evidence"),
+                "reopened_by": entry.get("reopened_by"),
                 "created": entry.get("created", ""),
                 "dead": is_dead(data, pid),
             }

@@ -120,6 +120,32 @@ def cmd_premise_kill(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_premise_reopen(args: argparse.Namespace) -> int:
+    """Reopen a killed premise: it and its inherited kills come back."""
+    base = Path(args.dir)
+    if not base.is_dir():
+        print(f"error: directory not found: {base}", file=sys.stderr)
+        return 1
+    try:
+        result = PR.reopen_premise(base, args.id, args.by)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    if result["already_open"]:
+        print(f"already open: {args.id}")
+        return 0
+    reopened = result["reopened"]
+    print(f"reopened: {args.id} (by {args.by})")
+    for pid in reopened:
+        if pid != args.id:
+            print(f"  revived: {pid}")
+    print(f"reopened {len(reopened)} premise(s) — re-indexing to restore routes")
+    n, skipped = D.rebuild_index(base)
+    print(f"indexed {n} dossiers -> {base / 'index.jsonl'}"
+          + (f" ({skipped} invalid skipped)" if skipped else ""))
+    return 0
+
+
 def cmd_premise_list(args: argparse.Namespace) -> int:
     base = Path(args.dir)
     rows = PR.list_premises(base)
@@ -132,9 +158,11 @@ def cmd_premise_list(args: argparse.Namespace) -> int:
         deps = ",".join(row["depends_on"]) if row["depends_on"] else "-"
         killed_by = f" (by {row['killed_by']})" if row["killed_by"] else ""
         ev = f" [evidence: {row['evidence']}]" if row["evidence"] else ""
+        reop = (f" [reopened by {row['reopened_by']}]"
+                if row.get("reopened_by") else "")
         stmt = row["statement"]
         stmt = stmt if len(stmt) <= 60 else stmt[:57] + "..."
-        print(f"{row['id']:16} {status:7} {deps[:22]:22} {stmt}{killed_by}{ev}")
+        print(f"{row['id']:16} {status:7} {deps[:22]:22} {stmt}{killed_by}{ev}{reop}")
     return 0
 
 
@@ -559,6 +587,22 @@ def build_parser() -> argparse.ArgumentParser:
                              "out), outside-work (someone else's result)")
     p_kill.add_argument("--dir", default="dossiers", help="dossier directory")
     p_kill.set_defaults(func=cmd_premise_kill)
+
+    p_reopen = p_sub.add_parser(
+        "reopen", help="reopen a killed premise",
+        description=(
+            "Reopen a killed premise: it goes back to open, along with "
+            "every premise that died only because of its kill (marked "
+            "'inherited from <id>'). Premises killed independently keep "
+            "their own killer and stay dead. The index is rebuilt and "
+            "recall suggests the revived routes again. --by names who is "
+            "reopening it."
+        ))
+    p_reopen.add_argument("id", help="premise id, e.g. P-20261011-001")
+    p_reopen.add_argument("--by", required=True,
+                         help="who is reopening it (name or short note)")
+    p_reopen.add_argument("--dir", default="dossiers", help="dossier directory")
+    p_reopen.set_defaults(func=cmd_premise_reopen)
 
     p_plist = p_sub.add_parser("list", help="list registered premises")
     p_plist.add_argument("--dir", default="dossiers", help="dossier directory")

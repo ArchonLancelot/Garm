@@ -123,6 +123,75 @@ class PremiseRegistryTest(unittest.TestCase):
                 PR.kill_premise(tmp, pid, "  ")
 
 
+class PremiseReopenTest(unittest.TestCase):
+    def test_reopen_roundtrip(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            trunk = PR.add_premise(tmp, "trunk", created="2026-10-11")
+            mid = PR.add_premise(tmp, "mid", depends_on=[trunk],
+                                 created="2026-10-11")
+            leaf = PR.add_premise(tmp, "leaf", depends_on=[mid],
+                                  created="2026-10-11")
+            PR.kill_premise(tmp, trunk, "dossier-x")
+            res = PR.reopen_premise(tmp, trunk, "reviewer")
+            self.assertFalse(res["already_open"])
+            self.assertEqual(sorted(res["reopened"]),
+                             sorted([trunk, mid, leaf]))
+            data = PR.load_registry(tmp)
+            for pid in (trunk, mid, leaf):
+                self.assertFalse(PR.is_dead(data, pid))
+                self.assertEqual(data["premises"][pid]["status"], "open")
+                self.assertEqual(data["premises"][pid]["reopened_by"],
+                                 "reviewer")
+                self.assertNotIn("killed_by", data["premises"][pid])
+
+    def test_reopen_revives_only_inherited(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            trunk = PR.add_premise(tmp, "trunk", created="2026-10-11")
+            leaf = PR.add_premise(tmp, "leaf", depends_on=[trunk],
+                                  created="2026-10-11")
+            PR.kill_premise(tmp, leaf, "dossier-independent")
+            PR.kill_premise(tmp, trunk, "dossier-x")
+            res = PR.reopen_premise(tmp, trunk, "reviewer")
+            self.assertEqual(res["reopened"], [trunk])  # leaf stays dead
+            data = PR.load_registry(tmp)
+            self.assertFalse(PR.is_dead(data, trunk))
+            self.assertTrue(PR.is_dead(data, leaf))
+            self.assertEqual(data["premises"][leaf]["killed_by"],
+                             "dossier-independent")
+
+    def test_reopen_open_is_noop_and_bad_input_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pid = PR.add_premise(tmp, "x", created="2026-10-11")
+            res = PR.reopen_premise(tmp, pid, "reviewer")
+            self.assertTrue(res["already_open"])
+            self.assertEqual(res["reopened"], [])
+            with self.assertRaises(ValueError):
+                PR.reopen_premise(tmp, "P-20261011-999", "reviewer")
+            PR.kill_premise(tmp, pid, "d-x")
+            with self.assertRaises(ValueError):
+                PR.reopen_premise(tmp, pid, "  ")
+
+    def test_cli_reopen_roundtrip(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            r = garm("premise", "add", "--statement", "trunk holds",
+                     "--dir", "d", cwd=tmp)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            pid = re.search(r"P-\d{8}-\d{3}", r.stdout).group(0)
+            r = garm("premise", "kill", pid, "--by", "d-x",
+                     "--dir", "d", cwd=tmp)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            r = garm("premise", "reopen", pid, "--by", "reviewer",
+                     "--dir", "d", cwd=tmp)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertIn(f"reopened: {pid}", r.stdout)
+            self.assertIn("re-indexing to restore routes", r.stdout)
+            r = garm("premise", "list", "--dir", "d", cwd=tmp)
+            self.assertNotIn("KILLED", r.stdout)
+            # --by is required
+            r = garm("premise", "reopen", pid, "--dir", "d", cwd=tmp)
+            self.assertNotEqual(r.returncode, 0)
+
+
 class PremiseRefParsingTest(unittest.TestCase):
     def test_parse_bullets_and_bare(self):
         text = "- P-20261011-001\n* P-20261011-002\n  P-20261011-003  \n"

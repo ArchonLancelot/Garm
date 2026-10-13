@@ -46,13 +46,13 @@ def filled_dossier(path: Path, task: str = "Example task",
 
 @unittest.skipUnless(MCP_AVAILABLE, "mcp package not installed")
 class ServerRegistrationTest(unittest.TestCase):
-    def test_nine_tools_registered(self):
+    def test_ten_tools_registered(self):
         tools = asyncio.run(S.server.list_tools())
         names = sorted(t.name for t in tools)
         self.assertEqual(names, [
             "garm_autopsy", "garm_confirm", "garm_init", "garm_list",
             "garm_premise_add", "garm_premise_kill", "garm_premise_list",
-            "garm_recall", "garm_validate",
+            "garm_premise_reopen", "garm_recall", "garm_validate",
         ])
 
     def test_tool_schemas_have_expected_params(self):
@@ -68,6 +68,9 @@ class ServerRegistrationTest(unittest.TestCase):
         self.assertIn("insight", confirm_props)
         kill_props = tools["garm_premise_kill"].input_schema["properties"]
         self.assertIn("evidence", kill_props)
+        reopen_props = tools["garm_premise_reopen"].input_schema["properties"]
+        self.assertIn("id", reopen_props)
+        self.assertIn("by", reopen_props)
 
     def test_tools_have_descriptions(self):
         for t in asyncio.run(S.server.list_tools()):

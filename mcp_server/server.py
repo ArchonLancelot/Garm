@@ -203,6 +203,25 @@ def premise_kill_impl(id: str, by: str, dir: str | None = None,
             "indexed": n, "skipped_invalid": skipped}
 
 
+def premise_reopen_impl(id: str, by: str, dir: str | None = None) -> dict:
+    """Reopen a killed premise: it and its inherited kills come back.
+
+    Only premises that died solely because of this kill (marked
+    "inherited from <id>") are revived; independently killed premises
+    stay dead. Rebuilds the index so revived routes return to recall.
+    Returns the premise ids reopened and whether it was already open.
+    """
+    base = _require_bank(dir)
+    try:
+        result = PR.reopen_premise(base, id, by)
+    except ValueError as exc:
+        raise ValueError(str(exc))
+    n, skipped = D.rebuild_index(base)
+    return {"reopened": result["reopened"],
+            "already_open": result["already_open"],
+            "indexed": n, "skipped_invalid": skipped}
+
+
 def premise_list_impl(dir: str | None = None) -> str:
     """List registered premises as a JSON array: id, statement, deps,
     status, killer, and computed dead flag."""
@@ -332,10 +351,20 @@ server.tool(
 )(premise_kill_impl)
 
 server.tool(
+    name="garm_premise_reopen",
+    description=(
+        "Reopen a killed premise: it goes back to open, along with every "
+        "premise that died only because of its kill. Premises killed "
+        "independently stay dead. The index is rebuilt and recall suggests "
+        "the revived routes again. by names who is reopening it."
+    ),
+)(premise_reopen_impl)
+
+server.tool(
     name="garm_premise_list",
     description=(
         "List registered premises as a JSON array: id, statement, "
-        "depends_on, status, killed_by, and the computed dead flag "
+        "depends_on, status, killed_by, reopened_by, and the computed dead flag "
         "(true when killed directly or via a killed ancestor)."
     ),
 )(premise_list_impl)
