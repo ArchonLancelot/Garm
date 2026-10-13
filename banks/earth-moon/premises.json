@@ -1,0 +1,93 @@
+{
+  "version": "0.2.4",
+  "premises": {
+    "P-20261011-001": {
+      "statement": "C7[K4] is biplanar",
+      "depends_on": [],
+      "status": "killed",
+      "killed_by": "2026-10-12-earth-moon-trunk-kill-c7k4-non-biplanar-external-evidence",
+      "created": "2026-10-11",
+      "evidence": "outside-work"
+    },
+    "P-20261011-002": {
+      "statement": "C7[K4] has a rotation-symmetric biplanar partition",
+      "depends_on": [
+        "P-20261011-001"
+      ],
+      "status": "killed",
+      "killed_by": "2026-10-11-earth-moon-rotation-symmetric-biplanar-partition-o",
+      "created": "2026-10-11",
+      "evidence": "our-tests"
+    },
+    "P-20261011-003": {
+      "statement": "Simulated annealing / local search can find C7[K4]'s biplanar partition",
+      "depends_on": [
+        "P-20261011-001"
+      ],
+      "status": "killed",
+      "killed_by": "inherited from P-20261011-001",
+      "created": "2026-10-11",
+      "evidence": "outside-work"
+    },
+    "P-20261011-004": {
+      "statement": "A 10-chromatic biplanar graph is constructible via dense named chi-boosting operations on a 9-chromatic biplanar base",
+      "depends_on": [],
+      "status": "killed",
+      "killed_by": "2026-10-11-earth-moon-naive-chi-boosting-constructions-for-a",
+      "created": "2026-10-11",
+      "evidence": "our-tests"
+    },
+    "P-20261011-005": {
+      "statement": "Sulanke's K6+C5 has one edge of headroom for a chi-raising tweak",
+      "depends_on": [
+        "P-20261011-004"
+      ],
+      "status": "killed",
+      "killed_by": "inherited from P-20261011-004",
+      "created": "2026-10-11",
+      "evidence": "our-tests"
+    },
+    "P-20261011-006": {
+      "statement": "SAT cutting-plane with minimal-core conflicts proves non-biplanarity at C7[K4] scale",
+      "depends_on": [],
+      "status": "killed",
+      "killed_by": "2026-10-11-earth-moon-k9-calibration-proof-direction-dead",
+      "created": "2026-10-11",
+      "evidence": "our-tests"
+    },
+    "P-20261011-007": {
+      "statement": "SAT cutting-plane find direction can discover a C7[K4] biplanar partition",
+      "depends_on": [
+        "P-20261011-001"
+      ],
+      "status": "killed",
+      "killed_by": "2026-10-12-earth-moon-minimum-core-cutting-plane-phase-2b-nig",
+      "created": "2026-10-11",
+      "evidence": "our-tests"
+    },
+    "P-20261011-008": {
+      "statement": "C7[K4] non-biplanarity is provable by an edge-count certificate (some vertex subset induces more than 6|S|-12 edges)",
+      "depends_on": [],
+      "status": "killed",
+      "killed_by": "2026-10-11-earth-moon-structural-attack-k33-global",
+      "created": "2026-10-11",
+      "evidence": "our-tests"
+    },
+    "P-20261012-001": {
+      "statement": "Canonical triangulation enumeration up to Aut(C7[K4]) is feasible (orbit count tractable for exact 78/76 decision)",
+      "depends_on": [],
+      "status": "killed",
+      "killed_by": "2026-10-11-earth-moon-orbit-count-infeasible",
+      "created": "2026-10-12",
+      "evidence": "our-tests"
+    },
+    "P-20261012-002": {
+      "statement": "A join-based 10-chromatic biplanar graph exists via K8+K2 (or any join with a K8 side)",
+      "depends_on": [],
+      "status": "killed",
+      "killed_by": "2026-10-12-earth-moon-k8-k2-join-contains-k9-non-biplanar",
+      "created": "2026-10-12",
+      "evidence": "proof"
+    }
+  }
+}

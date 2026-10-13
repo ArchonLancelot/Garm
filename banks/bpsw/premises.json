@@ -1,0 +1,48 @@
+{
+  "version": "0.2.4",
+  "premises": {
+    "P-20261012-001": {
+      "statement": "A Baillie-PSW pseudoprime exists and is findable by computational search",
+      "depends_on": [],
+      "status": "open",
+      "killed_by": null,
+      "created": "2026-10-12"
+    },
+    "P-20261012-002": {
+      "statement": "Pomerance-heuristic-guided search regions contain a BPSW pseudoprime",
+      "depends_on": [
+        "P-20261012-001"
+      ],
+      "status": "open",
+      "killed_by": null,
+      "created": "2026-10-12"
+    },
+    "P-20261012-003": {
+      "statement": "Weak pseudoprime constructions (fewer-prime / one-sided) extend to full Baillie-PSW pseudoprimes",
+      "depends_on": [
+        "P-20261012-001"
+      ],
+      "status": "open",
+      "killed_by": null,
+      "created": "2026-10-12"
+    },
+    "P-20261012-004": {
+      "statement": "A non-squarefree Baillie-PSW pseudoprime exists anchored at a known Wieferich prime (1093 or 3511)",
+      "depends_on": [
+        "P-20261012-001"
+      ],
+      "status": "open",
+      "killed_by": null,
+      "created": "2026-10-12"
+    },
+    "P-20261012-005": {
+      "statement": "A Baillie-PSW pseudoprime exists among Chernick Carmichael numbers",
+      "depends_on": [
+        "P-20261012-001"
+      ],
+      "status": "open",
+      "killed_by": null,
+      "created": "2026-10-12"
+    }
+  }
+}

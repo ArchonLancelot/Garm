@@ -113,6 +113,9 @@ structure, you supply the judgment. (In Claude Code, `/garm:autopsy`
 does it in one command.)
 
 ```bash
+# 0. (Optional) Start from a field-tested bank instead of an empty one
+python3 -m garm import banks/bpsw --dir dossiers   # or banks/earth-moon
+
 # 1. Scaffold a dossier for a failed task (class is required — pick honestly)
 python3 -m garm init --task "Fix flaky checkout test" --agent claude-code \
     --class reasoning-error -o dossiers
