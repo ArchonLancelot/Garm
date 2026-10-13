@@ -182,3 +182,8 @@ research note, about an unreleased model, not peer-reviewed. It is the
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+## Contact
+
+Questions, bug reports, or dossier-bank contributions:
+armandoricci6600@gmail.com
