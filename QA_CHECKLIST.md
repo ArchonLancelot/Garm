@@ -1,7 +1,28 @@
-# QA checklist — Garm v0.2.6
+# QA checklist — Garm v0.2.7
 
 Standing rule: nothing ships untested. Run this whole list before any release
 tag or public push. Check each box only after verifying, not before.
+
+## v0.2.7: BM25 retrieval
+
+- [ ] `garm/retrieval.py`: `BM25` implements the Okapi formula (smoothed
+      IDF, tf saturation, length norm); `score_corpus` scores the whole
+      bank in one pass, sig subscore ×2 + task subscore + confirms (cap 5);
+      alias groups count as one term (summed tf, OR'd df).
+- [ ] Stopword-noise regression: a bank where "one" appears in most
+      dossiers ranks the distinctive-term dossier first for a query
+      containing "one" (the 2026-10-14 transfer-test failure, now fixed).
+- [ ] Pure-paraphrase honest limit still holds: a query sharing NO
+      vocabulary with the relevant dossier does not surface it — BM25 is
+      still lexical; the noise just scores low instead of winning.
+- [ ] Hook: `garm_recall.py` parses float scores; `GARM_MIN_SCORE` default
+      recalibrated 2 → 1 (BM25 scores run smaller); hook tests 10/10.
+- [ ] MCP recall returns float scores; `matched_terms` display unchanged.
+- [ ] Old-vs-new drill on the shipped banks: exact rankings don't invert,
+      dead-route exclusion still works, confirms still boost.
+- [ ] `DOSSIER_SPEC.md` retrieval section documents BM25 + its limit;
+      README recall bullet + transfer-test note updated.
+- [ ] Full suite green: core 131/131, hook 10/10.
 
 ## v0.2.6: hybrid retrieval
 

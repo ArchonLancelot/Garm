@@ -23,11 +23,13 @@ Mem0 remembers your name. Garm remembers why you failed.
   saved. `garm validate` checks structure; `garm index` makes it
   retrievable.
 - **Recall** — pre-generation retrieval: `garm recall --task "..."` ranks
-  past autopsies by weighted keyword overlap (signature terms count
+  past autopsies by BM25 (signature terms count
   double). Hybrid since v0.2.6 — math symbols become words, query terms
   expand through a curated synonym map, so paraphrases match ("flaky"
   finds "intermittent"; alias matches show as `query~dossier-term`).
-  Lexical, honest, dumb.
+  v0.2.7 added BM25 term weighting: words appearing in every dossier
+  barely count, distinctive terms count a lot — generic-word noise no
+  longer outranks the relevant dossier. Lexical, honest, dumb.
 - **Confirm** — when a dossier demonstrably helps a later run,
   `garm confirm <id>` records it and confirmed dossiers rank higher.
   `--insight` records the open-ended counterpart: the dossier *generated
@@ -55,9 +57,10 @@ Mem0 remembers your name. Garm remembers why you failed.
 - **No auto-autopsy.** Root-cause analysis is the author's job; the tool
   checks structure, not truth. (`garm autopsy` interviews you and formats
   your answers — it never diagnoses on its own.)
-- **No embeddings, no semantic search.** `recall` ranks by weighted keyword
-  overlap — lexical, honest, dumb. (v0.2.6 added a synonym map and math
-  symbol canonicalization so paraphrases match; meaning-level retrieval
+- **No embeddings, no semantic search.** `recall` ranks by BM25-weighted
+  keyword matching — lexical, honest, dumb. (v0.2.6 added a synonym map and math
+  symbol canonicalization so paraphrases match; v0.2.7 added BM25 so common
+  words stop outranking distinctive ones; meaning-level retrieval
   stays a future opt-in, never the default.)
 - **No network, no accounts, no backend.** Local files. That's the point.
 
@@ -104,7 +107,9 @@ staying stdlib-only; meaning-level matching stays out of the default).
   Honest gap found: lexical recall missed the most relevant dossier on
   one query. v0.2.6 answered it with hybrid retrieval — paraphrases now
   match (documented limit: related ideas with different vocabulary still
-  need semantic search).
+  need semantic search). The 2026-10-14 transfer test found the next gap:
+  generic-word noise ("one") outranking the relevant dossier. v0.2.7
+  answered it with BM25 term weighting — common words barely count now.
 - **Earth–Moon biplanar coloring (v0.2.4):** 13 genuinely different
   methods, 10 premises killed (including a trunk kill on external
   evidence), 12 dossiers — the premise registry's first field trial.

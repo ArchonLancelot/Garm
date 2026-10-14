@@ -14,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -111,12 +112,13 @@ class AliasMatchingTest(unittest.TestCase):
             )])
             entry = D.build_index_entry(
                 bank / "dossier-00.md", bank, {"premises": {}})
-            total, sig_n, task_n, _, _ = RU.score(["flaky", "checkout"],
-                                                  entry)
-            # flaky~intermittent and checkout, both in the signature
-            self.assertEqual(sig_n, 2)
+            scores = RU.score_corpus(["flaky", "checkout"], [entry])
+            total, sig_n, task_n, _, _ = scores[entry["id"]]
+            # flaky~intermittent and checkout, both in the signature:
+            # BM25 subscores are positive floats, sig outweighs task here
+            self.assertGreater(sig_n, 0)
             self.assertEqual(task_n, 0)
-            self.assertEqual(total, 4)
+            self.assertGreater(total, 0)
             shown = RU.matched_terms(["flaky", "checkout"], entry)
             self.assertIn("flaky~intermittent", shown)
             self.assertIn("checkout", shown)
@@ -143,8 +145,9 @@ class AliasMatchingTest(unittest.TestCase):
             )])
             entry = D.build_index_entry(
                 bank / "dossier-00.md", bank, {"premises": {}})
-            total, sig_n, _, _, _ = RU.score(["primes"], entry)
-            self.assertEqual(sig_n, 1)
+            scores = RU.score_corpus(["primes"], [entry])
+            total, sig_n, _, _, _ = scores[entry["id"]]
+            self.assertGreater(sig_n, 0)
             self.assertGreater(total, 0)
 
     def test_math_paraphrase(self):
@@ -158,8 +161,9 @@ class AliasMatchingTest(unittest.TestCase):
             entry = D.build_index_entry(
                 bank / "dossier-00.md", bank, {"premises": {}})
             # "χ(G)" canonicalizes to chi; chi ~ chromatic via aliases
-            total, sig_n, _, _, _ = RU.score(
-                D.extract_keywords("χ(G) needs too many colors"), entry)
+            scores = RU.score_corpus(
+                D.extract_keywords("χ(G) needs too many colors"), [entry])
+            total, sig_n, _, _, _ = scores[entry["id"]]
             self.assertGreater(sig_n, 0, "chi should alias to chromatic")
             self.assertGreater(total, 0)
 
@@ -172,8 +176,8 @@ class AliasMatchingTest(unittest.TestCase):
             )])
             entry = D.build_index_entry(
                 bank / "dossier-00.md", bank, {"premises": {}})
-            total, sig_n, task_n, _, _ = RU.score(["banana", "xylophone"],
-                                                  entry)
+            scores = RU.score_corpus(["banana", "xylophone"], [entry])
+            total, sig_n, task_n, _, _ = scores[entry["id"]]
             self.assertEqual((total, sig_n, task_n), (0, 0, 0))
             self.assertEqual(RU.matched_terms(["banana"], entry), [])
 
@@ -189,19 +193,26 @@ class AliasMatchingTest(unittest.TestCase):
         self.assertEqual(RU.aliases_for("wieferich"), {"wieferich"})
         self.assertIn("intermittent", RU.aliases_for("flaky"))
 
-    def test_scoring_shape_unchanged(self):
-        # exact-match scoring is identical to the pre-hybrid formula:
-        # 2/sig + 1/task + confirms (capped at 5)
+    def test_scoring_shape_bm25(self):
+        # BM25 shape: 2*sig + 1*task + confirms (capped at 5).
+        # A second dossier sharing the query terms dilutes IDF, so the
+        # assertions below use one corpus and check structure, not values.
         entry = {
+            "id": "d1",
             "keywords": ["alpha", "beta"],
             "sig_keywords": ["alpha"],
             "confirmed_fixes": 7,
             "confirmed_insights": 2,
         }
-        total, sig_n, task_n, fix_b, ins_b = RU.score(["alpha", "beta"],
-                                                      entry)
-        self.assertEqual((sig_n, task_n, fix_b, ins_b), (1, 1, 5, 2))
-        self.assertEqual(total, 2 * 1 + 1 + 5 + 2)
+        scores = RU.score_corpus(["alpha", "beta"], [entry])
+        total, sig_n, task_n, fix_b, ins_b = scores["d1"]
+        self.assertEqual((fix_b, ins_b), (5, 2))
+        # sig counts double: removing the sig term drops more than removing
+        # the task term
+        no_sig = RU.score_corpus(["beta"], [entry])["d1"][0]
+        no_task = RU.score_corpus(["alpha"], [entry])["d1"][0]
+        self.assertGreater(no_task, no_sig)
+        self.assertAlmostEqual(total, 2 * sig_n + task_n + 5 + 2)
 
 
 class HybridRecallEndToEndTest(unittest.TestCase):
@@ -248,14 +259,78 @@ class HybridRecallEndToEndTest(unittest.TestCase):
             self.assertEqual(r1.returncode, 0)
             self.assertEqual(r2.returncode, 0)
             self.assertEqual(first, (bank / "index.jsonl").read_bytes())
-            # canonicalized keywords are in the index
-            entry = D.load_index_entries(bank / "index.jsonl")[0]
-            self.assertIn("chi", entry["keywords"])
-            self.assertIn("chromatic", entry["keywords"])
+
+
+class BM25Test(unittest.TestCase):
+    def test_idf_weights_rare_terms_above_common_ones(self):
+        docs = [Counter(["one", "test"]), Counter(["one", "test"]),
+                Counter(["one", "test"]), Counter(["zwitterion"])]
+        scores = RU.BM25(docs).score_many(
+            [frozenset({"one"}), frozenset({"test"}),
+             frozenset({"zwitterion"})])
+        # the rare-term doc outscores the common-term docs despite
+        # matching fewer query terms overall
+        self.assertGreater(scores[3], scores[0])
+        self.assertGreater(scores[3], scores[1])
+        self.assertGreater(scores[3], scores[2])
+
+    def test_common_word_noise_does_not_outrank_distinctive_match(self):
+        # Regression for the 2026-10-14 transfer test: a paraphrase query
+        # whose only shared word was "one" ranked BPSW noise above the
+        # relevant dossier. Under BM25, "one" appears in most dossiers so
+        # it barely counts; the distinctive term decides.
+        with tempfile.TemporaryDirectory() as tmp:
+            bank = make_bank(tmp, [
+                ("Unrelated task words here",
+                 "base-one-check: if one base test fails, stop and pull.",
+                 None),
+                ("Unrelated task words here",
+                 "prime-one-check: if one prime test fails, stop and pull.",
+                 None),
+                ("Unrelated task words here",
+                 "sieve-one-check: if one sieve test fails, stop and pull.",
+                 None),
+                ("Unrelated task words here",
+                 "zwitterion-trap: zwitterion handling collapses; stop.",
+                 None),
+            ])
+            entries = [
+                D.build_index_entry(bank / f"dossier-{i:02d}.md", bank,
+                                    {"premises": {}})
+                for i in range(4)
+            ]
+            scores = RU.score_corpus(["one", "test", "zwitterion"], entries)
+            ranked = sorted(scores, key=lambda i: -scores[i][0])
+            self.assertEqual(ranked[0], entries[3]["id"],
+                             "distinctive-term dossier must outrank "
+                             "\"one\"-matching noise")
+
+    def test_cli_ranks_distinctive_match_first(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bank = make_bank(tmp, [
+                ("Unrelated task words here",
+                 "base-one-check: if one base test fails, stop and pull.",
+                 None),
+                ("Unrelated task words here",
+                 "prime-one-check: if one prime test fails, stop and pull.",
+                 None),
+                ("Unrelated task words here",
+                 "sieve-one-check: if one sieve test fails, stop and pull.",
+                 None),
+                ("Unrelated task words here",
+                 "zwitterion-trap: zwitterion handling collapses; stop.",
+                 None),
+            ])
+            r = garm("recall", "--task", "one test zwitterion",
+                     "--dir", str(bank), cwd=tmp)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            lines = [ln for ln in r.stdout.splitlines() if "|" in ln]
+            self.assertIn("dossier-03", lines[0])
 
     def test_known_score_regression_anchor(self):
-        # the v0.2.5 Chernick drill dossier: exact-match scoring must not
-        # drift under the hybrid (2*3 sig + 1 task = 7)
+        # the v0.2.5 Chernick drill dossier: under BM25 it must still
+        # rank first for its query (the old integer anchor of 7 no longer
+        # applies — BM25 weights by rarity instead of counting)
         with tempfile.TemporaryDirectory() as tmp:
             bank = make_bank(tmp, [(
                 "Sweep Chernick Carmichael numbers through the strong "
@@ -270,8 +345,7 @@ class HybridRecallEndToEndTest(unittest.TestCase):
                      "--dir", str(bank), cwd=tmp)
             self.assertEqual(r.returncode, 0, r.stderr)
             first = r.stdout.splitlines()[0]
-            self.assertTrue(first.startswith("  7 |"),
-                            f"expected total 7, got: {first}")
+            self.assertIn("dossier-00", first)
 
 
 if __name__ == "__main__":

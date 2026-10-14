@@ -266,20 +266,28 @@ Fields:
 Because it is fully derived, `index.jsonl` can be deleted and rebuilt without
 losing anything. Rebuilding is byte-identical for unchanged input.
 
-## Retrieval ranking (v0.2.1)
+## Retrieval ranking (v0.2.7)
 
-`garm recall` scores each dossier as:
+`garm recall` scores each dossier with BM25:
 
 ```
-score = 2 × (query ∩ sig_keywords) + 1 × (query ∩ task_keywords)
+score = 2 × BM25(query, sig_keywords) + 1 × BM25(query, task_keywords)
       + min(confirmed_fixes, 5) + min(confirmed_insights, 5)
 ```
+
+BM25 weights each query term by inverse document frequency: a term
+appearing in every dossier (like "one") barely counts, while a rare,
+distinctive term counts a lot. Term frequency saturates and scores are
+normalized by dossier length, so long dossiers don't win just for being
+long. The whole bank is scored in one pass because IDF needs
+corpus-wide document frequencies.
 
 Signature terms count double because the failure signature is the retrieval
 key — it's the part of the dossier written to be matched on. Task terms
 count single. Each confirmed fix adds a point up to a cap of 5, so dossiers
 with a track record rank higher without swamping new ones forever. Ties
-break by confirmed fixes, then dossier id.
+break by confirmed fixes, then dossier id. Scores are floats; the
+`matched:` column still shows exactly which terms (or aliases) matched.
 
 This is still lexical, not semantic. It finds dossiers that *talk about the
 same things*, weighted toward the matchable parts and toward dossiers that
@@ -291,13 +299,15 @@ symbols are canonicalized to words (`χ(G)` → `chi`, `x²` → `x2`,
 (`garm/retrieval.py` — fully visible, hand-maintained), so *paraphrases*
 match: a query for "flaky" finds a dossier about "intermittent"
 failures, "primes" finds "prime". Alias matches show in the output as
-`query~dossier-term`, so the matching stays inspectable. The scoring
-shape is unchanged — only what counts as a match widened. The honest
-limit: the map is a dictionary, not understanding. It closes
-same-meaning-different-words misses; it does not connect *related ideas
-with different vocabularies* (a Wieferich query still won't surface a
-squarefreeness theorem on conceptual grounds alone). Full semantic
-retrieval remains a future opt-in, not the default.
+`query~dossier-term`, so the matching stays inspectable.
+
+(v0.2.7) BM25 term weighting, still lexical and stdlib-only: the BM25
+formula (Robertson et al.; implementation written fresh for Garm,
+informed by the pure-Python rank_bm25 package, MIT) replaces raw overlap
+counting. This answers the 2026-10-14 transfer test's measured failure:
+generic-word noise outranking the relevant dossier. The honest limit is
+unchanged: related ideas with different vocabularies still need semantic
+search, which remains a future opt-in, not the default.
 
 (v0.2.4) Before ranking, `recall` removes dead routes: dossiers whose
 `## Premises` section lists a premise that is dead (killed directly or via

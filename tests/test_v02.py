@@ -1,6 +1,7 @@
 """v0.2 behavior: failure_class, confirm, weighted recall, legacy v0.1."""
 
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -268,7 +269,11 @@ class RecallV02Test(unittest.TestCase):
             self.assertEqual(r.returncode, 0, r.stderr)
             lines = [ln for ln in r.stdout.splitlines() if ln.strip()]
             self.assertIn(dossier_id(Path(tmp) / "dossiers" / "a.md"), lines[0])
-            self.assertIn("sig:5", lines[0])
+            # BM25: all five query terms hit a's signature, none hit b's —
+            # a's sig subscore is a positive float, b's is zero
+            m = re.search(r"sig:(\d+\.\d+)", lines[0])
+            self.assertIsNotNone(m)
+            self.assertGreater(float(m.group(1)), 0)
 
     def test_confirmed_dossier_wins_ties(self):
         with tempfile.TemporaryDirectory() as tmp:
