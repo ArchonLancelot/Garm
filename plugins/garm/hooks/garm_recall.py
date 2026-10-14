@@ -20,7 +20,9 @@ Configuration (environment):
                   PYTHONPATH (default: try ``python3 -m garm`` as-is)
   GARM_BIN        how to invoke garm (default: "python3 -m garm")
   GARM_TOP        max dossiers to inject (default: 3)
-  GARM_MIN_SCORE  minimum recall score to inject anything (default: 2)
+  GARM_MIN_SCORE  minimum recall score to inject anything (default: 1;
+  BM25 scores run smaller than the old integer counts, so the default
+  was recalibrated — raise it if the hook chatters)
 
 Hook protocol (UserPromptSubmit):
   stdin:  {"session_id": ..., "hook_event_name": "UserPromptSubmit",
@@ -45,12 +47,19 @@ SECTION_CHARS = 500         # cap per "what retrieval would have changed"
 CONTEXT_CHARS = 8000        # total cap, under Claude Code's 10k limit
 
 _RECALL_LINE_RE = re.compile(
-    r"^\s*(\d+)\s*\|\s*(\S+)\s*\|\s*(.*?)\s*\[[^\]]*\]\s*\(from:(.*?)\ssig:\d+"
+    r"^\s*(\d+(?:\.\d+)?)\s*\|\s*(\S+)\s*\|\s*(.*?)\s*\[[^\]]*\]\s*\(from:(.*?)\ssig:\d+(?:\.\d+)?"
 )
 _SECTION_RE = re.compile(
     r"^##\s*what retrieval would have changed\s*$", re.IGNORECASE | re.MULTILINE
 )
 _NEXT_SECTION_RE = re.compile(r"^##\s+", re.MULTILINE)
+
+
+def _float_env(name: str, default: float) -> float:
+    try:
+        return max(0.0, float(os.environ.get(name, "") or default))
+    except ValueError:
+        return default
 
 
 def _int_env(name: str, default: int) -> int:
@@ -96,7 +105,7 @@ def main() -> int:
         return 0
 
     top = _int_env("GARM_TOP", 3) or 3
-    min_score = _int_env("GARM_MIN_SCORE", 2)
+    min_score = _float_env("GARM_MIN_SCORE", 1.0)
 
     env = dict(os.environ)
     garm_home = os.environ.get("GARM_HOME")
@@ -123,12 +132,12 @@ def main() -> int:
     if proc.returncode != 0 or not proc.stdout.strip():
         return 0
 
-    hits: list[tuple[int, str, str, str, str]] = []  # score, id, task, rel, origin
+    hits: list[tuple[float, str, str, str, str]] = []  # score, id, task, rel, origin
     for line in proc.stdout.splitlines():
         m = _RECALL_LINE_RE.match(line)
         if not m:
             continue
-        score = int(m.group(1))
+        score = float(m.group(1))
         if score < min_score:
             continue
         dossier_id, task, origin = m.group(2), m.group(3).strip(), m.group(4).strip()

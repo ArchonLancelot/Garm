@@ -43,7 +43,7 @@ Put these in your shell rc or `~/.claude/settings.json` `env`. Without
 | `GARM_HOME` | — | repo root; prepended to `PYTHONPATH` |
 | `GARM_BIN` | `python3 -m garm` | how to invoke the CLI |
 | `GARM_TOP` | `3` | max dossiers injected per prompt |
-| `GARM_MIN_SCORE` | `2` | minimum recall score to inject anything |
+| `GARM_MIN_SCORE` | `1` | minimum recall score to inject anything (BM25 scores run smaller than the old integer counts) |
 
 ## What the hook injects
 
