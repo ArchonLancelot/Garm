@@ -28,7 +28,6 @@ from garm import autopsy as AU
 from garm import dossier as D
 from garm import premise as PR
 from garm import retrieval as RU
-from garm.cli import recall_score
 
 server = MCPServer("garm")
 
@@ -70,6 +69,7 @@ def recall_impl(task: str, top: int = 3,
     except ValueError as exc:
         raise ValueError(str(exc))
     scored: list[dict] = []
+    live: list[dict] = []
     for md in sorted(base.rglob("*.md")):
         if D.validate_dossier(md):
             continue
@@ -78,7 +78,11 @@ def recall_impl(task: str, top: int = 3,
             continue
         if entry.get("premise_dead") and not include_dead:
             continue
-        total, sig_n, task_n, _fix_b, _ins_b = recall_score(query_keys, entry)
+        live.append(entry)
+    # BM25 needs whole-corpus document frequencies: score in one pass.
+    scores = RU.score_corpus(query_keys, live)
+    for entry in live:
+        total, sig_n, task_n, _fix_b, _ins_b = scores[entry["id"]]
         scored.append({
             "id": entry["id"],
             "task": entry["task"],

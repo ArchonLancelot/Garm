@@ -1,8 +1,8 @@
-"""Hybrid retrieval: lexical scoring over canonicalized text with synonym
-aliases. v0.2.6.
+"""Hybrid retrieval: BM25 lexical scoring over canonicalized text with
+synonym aliases. v0.2.7.
 
-Still no embeddings, no model calls, no network. Two upgrades over pure
-keyword overlap:
+Still no embeddings, no model calls, no network. Three upgrades over
+pure keyword overlap:
 
 1. Symbol canonicalization: Unicode math symbols become words *before*
    tokenizing, so ``χ(G)`` and "chromatic number" share keywords, ``x²``
@@ -10,24 +10,36 @@ keyword overlap:
 2. Synonym aliases: a curated, readable map of equivalent terms. A query
    for "flaky" matches a dossier about "intermittent" failures; "primes"
    matches "prime"; "coloring" matches "chromatic".
+3. BM25 ranking (new): terms are weighted by inverse document frequency,
+   so a word appearing in every dossier (like "one") barely counts while
+   a rare, distinctive term counts a lot; term frequency saturates and
+   scores are normalized by dossier length. This fixes the failure the
+   2026-10-14 transfer test measured: generic-word noise outranking the
+   relevant dossier.
 
-The scoring *shape* is unchanged (signature terms count double, task
-terms single, confirms boost up to 5 each) — the only change is WHAT
-counts as a match. Recall output shows alias matches as
+What BM25 does NOT fix: it is still lexical. A paraphrase sharing no
+vocabulary with the dossier ("reciprocals" vs "unit fractions") will not
+match unless the synonym map covers it — that is the honest limit, and
+the reason a future opt-in semantic backend would plug in at
+``score_corpus()``: it is the single scoring funnel, so a ``--semantic``
+flag could one day blend an embedding cosine into the total and mark it
+in the display.
+
+The scoring *shape* is unchanged (signature terms are the retrieval key
+and count double, task terms single, confirms boost up to 5 each) — only
+the term weighting got smarter. Recall output shows alias matches as
 ``query~dossier-term`` so the matching stays inspectable; nothing is
 a black box.
 
 The synonym map is data, not intelligence: hand-curated, deliberately
-incomplete, and fully visible below. If a paraphrase isn't in the map,
-it won't match — that's the honest limit of this approach, and the
-reason a future opt-in semantic backend would plug in at ``score()``:
-it is the single scoring funnel, so a ``--semantic`` flag could one day
-blend an embedding cosine into the total and mark it in the display.
+incomplete, and fully visible below.
 """
 
 from __future__ import annotations
 
+import math
 import re
+from collections import Counter
 
 # Unicode symbol -> words, applied before tokenizing. Entries that would
 # glue onto a preceding word character get a leading space ("x²" -> "x 2",
@@ -229,26 +241,90 @@ def find_match(query_key: str, keywords: list[str]) -> str | None:
     return None
 
 
-def score(query_keys: list[str], entry: dict,
-          confirmed_boost_cap: int = 5) -> tuple[int, int, int, int, int]:
-    """Alias-aware recall scoring. Same shape as the old keyword-overlap
-    score: (total, sig_overlap, task_overlap, fix_boost, insight_boost).
+class BM25:
+    """Okapi BM25 over tokenized documents. Stdlib only (``math``).
 
-    A query key matches when it *or any alias* appears in the dossier's
-    keywords. Signature-term matches still count double; the confirm
-    boosts are unchanged. This is the single scoring funnel — a future
-    opt-in semantic backend would blend in here.
+    The ranking formula is the published Okapi BM25 (Robertson et al.);
+    this implementation is written fresh for Garm, informed by the
+    widely-used pure-Python rank_bm25 package (dorianbrown/rank_bm25,
+    MIT licence) — only the public formula is used, no code is copied.
+    Documents are Counters of term -> frequency; query terms arrive as
+    alias groups (frozensets), so a whole synonym group counts as one
+    term: its tf is the summed frequency of its members, its df the
+    number of documents containing any member.
     """
-    sig_keys = entry.get("sig_keywords") or []
-    task_keys = [k for k in entry.get("keywords", []) if k not in sig_keys]
-    sig_overlap = sum(1 for k in query_keys if find_match(k, sig_keys))
-    task_overlap = sum(1 for k in query_keys if find_match(k, task_keys))
-    fix_boost = min(int(entry.get("confirmed_fixes", 0) or 0),
+
+    def __init__(self, docs: list[Counter], k1: float = 1.5,
+                 b: float = 0.75) -> None:
+        self._tfs = docs
+        self._n = len(docs)
+        self._k1 = k1
+        self._b = b
+        total_len = sum(sum(c.values()) for c in docs)
+        self._avgdl = total_len / self._n if self._n else 0.0
+
+    def score_many(self, query_groups: list[frozenset]) -> list[float]:
+        """BM25 score of every document against the query groups."""
+        out = [0.0] * self._n
+        if not self._n or not query_groups:
+            return out
+        for group in query_groups:
+            tfs: list[int] = []
+            df = 0
+            for c in self._tfs:
+                tf = sum(c.get(t, 0) for t in group)
+                tfs.append(tf)
+                if tf:
+                    df += 1
+            if not df:
+                continue
+            # Smoothed IDF: always >= 0, so a term in every document
+            # contributes ~nothing instead of going negative.
+            idf = math.log(1 + (self._n - df + 0.5) / (df + 0.5))
+            for i, tf in enumerate(tfs):
+                if not tf:
+                    continue
+                dl = sum(self._tfs[i].values())
+                norm = self._k1 * (1 - self._b + self._b * dl /
+                                   (self._avgdl or 1))
+                out[i] += idf * tf * (self._k1 + 1) / (tf + norm)
+        return out
+
+
+def score_corpus(query_keys: list[str], entries: list[dict],
+                 confirmed_boost_cap: int = 5
+                 ) -> dict[str, tuple[float, float, float, int, int]]:
+    """Rank every entry with BM25. Returns
+    ``{dossier_id: (total, sig_score, task_score, fix_boost, ins_boost)}``.
+
+    Two BM25 fields preserve the v0.2 design: the failure signature is
+    the retrieval key, so its BM25 subscore counts double; task-keyword
+    subscores count single. Confirm boosts are unchanged (capped ints).
+    Query keys are alias-expanded before scoring, exactly as the old
+    per-entry scorer did — only the term weighting got smarter.
+
+    This is the single scoring funnel: a future opt-in semantic backend
+    would blend an embedding cosine into ``total`` here.
+    """
+    groups = [aliases_for(k) for k in query_keys]
+    sig_docs: list[Counter] = []
+    task_docs: list[Counter] = []
+    for e in entries:
+        sig = e.get("sig_keywords") or []
+        sigset = set(sig)
+        task = [k for k in (e.get("keywords") or []) if k not in sigset]
+        sig_docs.append(Counter(sig))
+        task_docs.append(Counter(task))
+    sig_scores = BM25(sig_docs).score_many(groups)
+    task_scores = BM25(task_docs).score_many(groups)
+    out: dict[str, tuple[float, float, float, int, int]] = {}
+    for e, ss, ts in zip(entries, sig_scores, task_scores):
+        fix_b = min(int(e.get("confirmed_fixes", 0) or 0),
                     confirmed_boost_cap)
-    insight_boost = min(int(entry.get("confirmed_insights", 0) or 0),
-                        confirmed_boost_cap)
-    total = 2 * sig_overlap + task_overlap + fix_boost + insight_boost
-    return total, sig_overlap, task_overlap, fix_boost, insight_boost
+        ins_b = min(int(e.get("confirmed_insights", 0) or 0),
+                    confirmed_boost_cap)
+        out[e["id"]] = (2 * ss + ts + fix_b + ins_b, ss, ts, fix_b, ins_b)
+    return out
 
 
 def matched_terms(query_keys: list[str], entry: dict) -> list[str]:

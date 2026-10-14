@@ -20,23 +20,12 @@ from . import dossier as D
 from . import premise as PR
 from . import retrieval as RU
 
-# Recall scoring: signature-term overlap counts double (the signature is the
-# retrieval key), task-term overlap counts single, and each confirmed fix
-# or confirmed insight adds 1 point up to a cap of 5 each, so one veteran
-# dossier can't swamp new ones.
-CONFIRMED_BOOST_CAP = 5
-
-
-def recall_score(query_keys: list[str], entry: dict) -> tuple[int, int, int, int, int]:
-    """Return (total, sig_overlap, task_overlap, fix_boost, insight_boost).
-
-    v0.2.6: alias-aware via garm/retrieval.py — a query key matches when it
-    or any curated synonym appears in the dossier's keywords. Same shape
-    as before; kept here (and not moved) because the MCP server imports it
-    from this module.
-    """
-    return RU.score(query_keys, entry,
-                    confirmed_boost_cap=CONFIRMED_BOOST_CAP)
+# Recall scoring is BM25 over the bank (see garm/retrieval.py): signature
+# terms are the retrieval key (their BM25 subscore counts double), task
+# terms single, and each confirmed fix or insight adds 1 point up to a
+# cap of 5 each, so one veteran dossier can't swamp new ones. Scores are
+# floats; the corpus is scored in one pass because BM25 needs document
+# frequencies. The MCP server uses RU.score_corpus directly.
 
 
 def cmd_autopsy(args: argparse.Namespace) -> int:
@@ -283,6 +272,7 @@ def cmd_recall(args: argparse.Namespace) -> int:
         registry = {"premises": {}}
     scored = []
     dead = []
+    live = []
     for md in sorted(base.rglob("*.md")):
         if D.validate_dossier(md):
             continue
@@ -292,7 +282,11 @@ def cmd_recall(args: argparse.Namespace) -> int:
         if entry.get("premise_dead") and not args.include_dead:
             dead.append(entry)
             continue
-        total, sig_n, task_n, fix_b, ins_b = recall_score(query_keys, entry)
+        live.append(entry)
+    # BM25 needs whole-corpus document frequencies: score in one pass.
+    scores = RU.score_corpus(query_keys, live)
+    for entry in live:
+        total, sig_n, task_n, fix_b, ins_b = scores[entry["id"]]
         overlap = RU.matched_terms(query_keys, entry)
         scored.append((total, sig_n, task_n, fix_b, ins_b, overlap, entry))
     if dead:
@@ -319,8 +313,8 @@ def cmd_recall(args: argparse.Namespace) -> int:
         insights = entry.get("confirmed_insights", 0)
         origin = entry.get("origin") or "?"
         dead_mark = " [premise-dead]" if entry.get("premise_dead") else ""
-        print(f"{total:3d} | {entry['id']} | {entry['task']} "
-              f"[{entry['path']}] (from:{origin} sig:{sig_n} task:{task_n} "
+        print(f"{total:6.2f} | {entry['id']} | {entry['task']} "
+              f"[{entry['path']}] (from:{origin} sig:{sig_n:.2f} task:{task_n:.2f} "
               f"fix:{fixes} insight:{insights} matched: {matched}){dead_mark}")
     return 0
 
@@ -473,17 +467,19 @@ def build_parser() -> argparse.ArgumentParser:
         "recall",
         help="rank dossiers for a task description",
         description=(
-            "Rank dossiers by a weighted lexical score: signature-term "
-            "overlap counts DOUBLE (the failure signature is the retrieval "
-            "key), task-term overlap counts single, and each confirmed fix "
+            "Rank dossiers by BM25 lexical score: signature-term matches "
+            "count DOUBLE (the failure signature is the retrieval "
+            "key), task-term matches single, and each confirmed fix "
             "or confirmed insight adds 1 point up to a cap of "
-            f"{CONFIRMED_BOOST_CAP} each. Ties break by total confirms, then "
-            "dossier id. v0.2.6 hybrid: before matching, Unicode math "
+            "5 each. Ties break by total confirms, then "
+            "dossier id. Before matching, Unicode math "
             "symbols are canonicalized to words (χ → chi, x² → x 2) and "
             "query terms expand through a curated synonym map (flaky ~ "
-            "intermittent, primes ~ prime), so paraphrases match. This is "
-            "still keyword overlap, NOT semantic similarity: no embeddings, "
-            "no model calls, no magic — just smarter matching, and the "
+            "intermittent, primes ~ prime), so paraphrases match. BM25 "
+            "weights terms by rarity: a word in every dossier barely "
+            "counts, a distinctive term counts a lot. This is "
+            "still keyword matching, NOT semantic similarity: no embeddings, "
+            "no model calls, no magic — just smarter weighting, and the "
             "`matched:` column shows alias matches as `query~dossier-term` "
             "so you can see exactly what matched. It finds "
             "dossiers that talk about the same things, weighted toward the "
