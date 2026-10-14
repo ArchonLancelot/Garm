@@ -1,7 +1,20 @@
-# QA checklist — Garm v0.2.7
+# QA checklist — Garm v0.2.8
 
 Standing rule: nothing ships untested. Run this whole list before any release
 tag or public push. Check each box only after verifying, not before.
+
+## v0.2.8: MCP tool annotations (M8ven flag)
+
+- [ ] All 10 tools in `mcp_server/server.py` declare `annotations` with
+      all four hints as booleans (readOnly/destructive/idempotent/
+      openWorld), values verified against actual behavior (kill/reopen
+      idempotent per their no-op-on-repeat docstrings; nothing destructive;
+      nothing touches the network).
+- [ ] Hints serialize with camelCase names on the wire (`readOnlyHint`).
+- [ ] `garm_recall` MCP description no longer says "keyword overlap,
+      v0.2.6" — now BM25, v0.2.7.
+- [ ] MCP suite 14/14 green (3 new annotation tests); core 131/131 and
+      hook 10/10 still green.
 
 ## v0.2.7: BM25 retrieval
 

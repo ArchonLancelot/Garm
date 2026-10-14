@@ -79,6 +79,57 @@ class ServerRegistrationTest(unittest.TestCase):
 
 
 @unittest.skipUnless(MCP_AVAILABLE, "mcp package not installed")
+class ServerAnnotationsTest(unittest.TestCase):
+    """M8ven 2026-10-14: every tool must declare all four MCP hints."""
+
+    def test_every_tool_declares_all_four_hints(self):
+        for t in asyncio.run(S.server.list_tools()):
+            self.assertIsNotNone(t.annotations,
+                                 f"{t.name} has no annotations")
+            for hint in ("read_only_hint", "destructive_hint",
+                         "idempotent_hint", "open_world_hint"):
+                value = getattr(t.annotations, hint, None)
+                self.assertIsInstance(value, bool,
+                                      f"{t.name}.{hint} is not a bool")
+
+    def test_hint_values_match_behavior(self):
+        tools = {t.name: t for t in asyncio.run(S.server.list_tools())}
+        ann = {name: t.annotations for name, t in tools.items()}
+        # read-only tools change nothing
+        for name in ("garm_recall", "garm_validate", "garm_list",
+                     "garm_premise_list"):
+            self.assertTrue(ann[name].read_only_hint, name)
+        # state-changing tools are not read-only
+        for name in ("garm_init", "garm_confirm", "garm_premise_add",
+                     "garm_premise_kill", "garm_premise_reopen",
+                     "garm_autopsy"):
+            self.assertFalse(ann[name].read_only_hint, name)
+        # nothing deletes or destroys; kill is reversible via reopen
+        for name, a in ann.items():
+            self.assertFalse(a.destructive_hint, name)
+        # nothing touches the network
+        for name, a in ann.items():
+            self.assertFalse(a.open_world_hint, name)
+        # repeat kills/reopens are documented no-ops
+        self.assertTrue(ann["garm_premise_kill"].idempotent_hint)
+        self.assertTrue(ann["garm_premise_reopen"].idempotent_hint)
+        # creating/bumping twice is not the same as once
+        for name in ("garm_init", "garm_confirm", "garm_autopsy",
+                     "garm_premise_add"):
+            self.assertFalse(ann[name].idempotent_hint, name)
+
+    def test_hints_serialize_with_camel_case_names(self):
+        # the MCP wire protocol expects readOnlyHint etc.; make sure the
+        # annotations survive serialization under those names
+        tools = {t.name: t for t in asyncio.run(S.server.list_tools())}
+        dumped = tools["garm_recall"].annotations.model_dump(by_alias=True)
+        for key in ("readOnlyHint", "destructiveHint",
+                    "idempotentHint", "openWorldHint"):
+            self.assertIn(key, dumped)
+            self.assertIsInstance(dumped[key], bool)
+
+
+@unittest.skipUnless(MCP_AVAILABLE, "mcp package not installed")
 class ServerRoundTripTest(unittest.TestCase):
     def test_init_validate_confirm_recall_list(self):
         with tempfile.TemporaryDirectory() as tmp:

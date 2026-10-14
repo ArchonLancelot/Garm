@@ -23,6 +23,7 @@ import os
 from pathlib import Path
 
 from mcp.server.mcpserver import MCPServer
+from mcp.types import ToolAnnotations
 
 from garm import autopsy as AU
 from garm import dossier as D
@@ -30,6 +31,24 @@ from garm import premise as PR
 from garm import retrieval as RU
 
 server = MCPServer("garm")
+
+
+def _ann(read_only: bool, destructive: bool = False,
+         idempotent: bool = False, open_world: bool = False
+         ) -> ToolAnnotations:
+    """MCP tool annotations, set from actual behavior (v0.2.7).
+
+    readOnlyHint: the tool changes nothing. destructiveHint: it deletes or
+    destroys data (none of Garm's tools do — kills are reversible via
+    reopen). idempotentHint: repeating the call is a safe no-op.
+    openWorldHint: it touches the network (none do — local files only).
+    """
+    return ToolAnnotations(
+        readOnlyHint=read_only,
+        destructiveHint=destructive,
+        idempotentHint=idempotent,
+        openWorldHint=open_world,
+    )
 
 
 def _bank(d: str | None) -> Path:
@@ -51,9 +70,9 @@ def recall_impl(task: str, top: int = 3,
 
     Dead routes (dossiers resting on a killed premise) are excluded unless
     ``include_dead`` is true; then they are returned marked premise_dead.
-    v0.2.6: hybrid matching — Unicode math symbols are canonicalized and
-    query terms expand through a curated synonym map (still lexical, no
-    embeddings). ``matched_terms`` shows alias matches as
+    v0.2.7: BM25 term weighting — Unicode math symbols are canonicalized
+    and query terms expand through a curated synonym map (still lexical,
+    no embeddings). ``matched_terms`` shows alias matches as
     ``query~dossier-term``. Returns a JSON array (as text) of ranked
     dossier objects.
     """
@@ -287,15 +306,17 @@ def autopsy_impl(task: str, agent: str, failure_class: str,
 server.tool(
     name="garm_recall",
     description=(
-        "Rank past failure dossiers for a task description. LEXICAL "
-        "scoring (keyword overlap, NOT semantic): signature-term matches "
-        "count double, task-term matches single, confirmed dossiers gain "
-        "up to +5 each. v0.2.6 hybrid: math symbols are canonicalized to "
-        "words and query terms expand through a curated synonym map, so "
-        "paraphrases match — still no embeddings. Returns a JSON array of "
-        "ranked dossiers with scores, signatures, matched terms "
-        "(alias matches shown as query~dossier-term), and confirm counts."
+        "Rank past failure dossiers for a task description. BM25 lexical "
+        "scoring (NOT semantic): signature-term matches count double, "
+        "task-term matches single, confirmed dossiers gain "
+        "up to +5 each. v0.2.7: terms weighted by rarity, math symbols are "
+        "canonicalized to words and query terms expand through a curated "
+        "synonym map, so paraphrases match — still no embeddings. Returns "
+        "a JSON array of ranked dossiers with scores, signatures, matched "
+        "terms (alias matches shown as query~dossier-term), and confirm "
+        "counts."
     ),
+    annotations=_ann(read_only=True, idempotent=True),
 )(recall_impl)
 
 server.tool(
@@ -307,6 +328,7 @@ server.tool(
         "failure_class must be one of: knowledge-gap, reasoning-error, "
         "execution-slip, tool-misuse, misread-task."
     ),
+    annotations=_ann(read_only=False, idempotent=False),
 )(init_impl)
 
 server.tool(
@@ -316,6 +338,7 @@ server.tool(
         "errors. Rejects dossiers that are missing required sections or "
         "still contain untouched template placeholder text."
     ),
+    annotations=_ann(read_only=True, idempotent=True),
 )(validate_impl)
 
 server.tool(
@@ -328,6 +351,7 @@ server.tool(
         "what the fix was (max 140 chars), stored on the dossier so the "
         "track record is auditable."
     ),
+    annotations=_ann(read_only=False, idempotent=False),
 )(confirm_impl)
 
 server.tool(
@@ -336,6 +360,7 @@ server.tool(
         "List all valid dossiers in the bank as a JSON array: id, task, "
         "failure class, confirm counts, origin, and outcome."
     ),
+    annotations=_ann(read_only=True, idempotent=True),
 )(list_impl)
 
 server.tool(
@@ -347,6 +372,7 @@ server.tool(
         "their premises in an optional ## Premises section. Returns the "
         "new premise id."
     ),
+    annotations=_ann(read_only=False, idempotent=False),
 )(premise_add_impl)
 
 server.tool(
@@ -360,6 +386,7 @@ server.tool(
         "outside-work. One closed big route closes a whole family of "
         "approaches."
     ),
+    annotations=_ann(read_only=False, idempotent=True),
 )(premise_kill_impl)
 
 server.tool(
@@ -370,6 +397,7 @@ server.tool(
         "independently stay dead. The index is rebuilt and recall suggests "
         "the revived routes again. by names who is reopening it."
     ),
+    annotations=_ann(read_only=False, idempotent=True),
 )(premise_reopen_impl)
 
 server.tool(
@@ -379,6 +407,7 @@ server.tool(
         "depends_on, status, killed_by, reopened_by, and the computed dead flag "
         "(true when killed directly or via a killed ancestor)."
     ),
+    annotations=_ann(read_only=True, idempotent=True),
 )(premise_list_impl)
 
 server.tool(
@@ -395,6 +424,7 @@ server.tool(
         "with the missing sections named. Nothing is invented — answers "
         "go in verbatim."
     ),
+    annotations=_ann(read_only=False, idempotent=False),
 )(autopsy_impl)
 
 
