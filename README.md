@@ -1,5 +1,7 @@
 # Garm — v0.2.6
 
+[![M8ven Score](https://m8ven.ai/badge/mcp/archonlancelot-garm-1o1rhc?v=1c7644f93e4be2c62b05effc3ccd9dd7&variant=verified)](https://m8ven.ai/mcp/archonlancelot-garm-1o1rhc?s=readme)
+
 **A failure memory for coding agents — so the next attempt is a new idea, not a repeat.**
 
 Named for Garm, the hound at Hel's gate.
