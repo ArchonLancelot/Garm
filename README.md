@@ -32,6 +32,10 @@ Mem0 remembers your name. Garm remembers why you failed.
   v0.2.7 added BM25 term weighting: words appearing in every dossier
   barely count, distinctive terms count a lot — generic-word noise no
   longer outranks the relevant dossier. Lexical, honest, dumb.
+  v0.2.9 adds an opt-in Tier 2 meaning lane (`--semantic`): embedding
+  cosine similarity leading the ranking, for paraphrases that share no
+  words at all. Needs `pip install garm[semantic]` plus one
+  `garm semantic warmup`; the default stays stdlib-only.
 - **Confirm** — when a dossier demonstrably helps a later run,
   `garm confirm <id>` records it and confirmed dossiers rank higher.
   `--insight` records the open-ended counterpart: the dossier *generated
@@ -59,11 +63,11 @@ Mem0 remembers your name. Garm remembers why you failed.
 - **No auto-autopsy.** Root-cause analysis is the author's job; the tool
   checks structure, not truth. (`garm autopsy` interviews you and formats
   your answers — it never diagnoses on its own.)
-- **No embeddings, no semantic search.** `recall` ranks by BM25-weighted
+- **No embeddings by default.** `recall` ranks by BM25-weighted
   keyword matching — lexical, honest, dumb. (v0.2.6 added a synonym map and math
   symbol canonicalization so paraphrases match; v0.2.7 added BM25 so common
-  words stop outranking distinctive ones; meaning-level retrieval
-  stays a future opt-in, never the default.)
+  words stop outranking distinctive ones; v0.2.9 added meaning-level
+  retrieval as an opt-in Tier 2 lane, never the default.)
 - **No network, no accounts, no backend.** Local files. That's the point.
 
 ## How Garm differs from short-lesson tools

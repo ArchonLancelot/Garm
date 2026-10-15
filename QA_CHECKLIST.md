@@ -1,7 +1,51 @@
-# QA checklist — Garm v0.2.8
+# QA checklist — Garm v0.2.9 (working)
 
 Standing rule: nothing ships untested. Run this whole list before any release
 tag or public push. Check each box only after verifying, not before.
+
+## v0.2.9: Tier 2 opt-in semantic lane
+
+- [x] `garm/semantic.py`: lazy fastembed import (never on the default
+      path — verified `fastembed not in sys.modules` after default-path
+      scoring); `SemanticError` messages always name the fixing command
+      (`pip install garm[semantic]` / `garm semantic warmup`).
+- [x] `score_corpus` default path byte-identical to v0.2.7: 25-entry
+      randomized check, total == 2*sig + task + fix + ins and sem == 0.0
+      on all 25; fastembed never imported.
+- [x] Semantic ranking: stub-backend test proves the meaning lane leads
+      in semantic mode (order follows semantic ranks; the BM25 winner
+      does not veto). Design note: an earlier revision fused both lanes
+      with RRF, but RRF gives equal weight to a BM25 lane that is
+      confidently wrong on paraphrases — the exact failure --semantic
+      exists to escape — so the lane the user asked for leads instead.
+      Boosts fold into the semantic ranking (adding capped ints raw on
+      top of rank scores would make boosts the entire ranking).
+- [x] Cache: `.garm/embeddings.json` keyed by id+model+content-hash;
+      hit avoids re-embed, edit invalidates (hash mismatch recomputes).
+- [x] Guards: fastembed genuinely hidden -> error names the install;
+      unwarmed model -> error names `garm semantic warmup`; warmed ->
+      no raise. `model_is_cached()` validates file sizes against
+      fastembed's own metadata (a partial download reads as
+      not-cached); recall path sets `HF_HUB_OFFLINE=1` so a cache
+      problem raises instead of downloading mid-turn.
+- [x] Durable model cache: fastembed >= 0.9 defaults to
+      `tempfile/fastembed_cache` (ephemeral!); Garm pins
+      `~/.cache/fastembed` unless `FASTEMBED_CACHE_PATH` is set.
+- [x] Wiring: CLI `--semantic` + `semantic warmup` parse; MCP
+      `garm_recall(semantic=true)` returns `semantic_score` /
+      `semantic_lane_first`; hook `GARM_SEMANTIC=1` appends `--semantic`
+      (threshold stays 1.0 — semantic totals are cosine-based on a
+      similar scale); hook line regex still parses the new `sem:` column.
+- [x] Suites: core 146/146 (131 existing + 15 new), hook 10/10, MCP
+      14/14 — all green.
+- [x] SHIP GATE (2026-10-15, drill bank = 29 seed dossiers + faithful
+      P2-autopsy reconstruction): the transfer test's paraphrase
+      ("five different whole numbers whose reciprocals total one…")
+      ranks the P2 autopsy #3 with `--semantic` (BM25 alone: #15,
+      absent from top-3 — the measured failure, reproduced). Honest
+      margin note: bge-small still prefers two noise dossiers (#1-2);
+      the lane lifts the autopsy #15 -> #3 but the model's
+      discrimination on short math texts is the binding constraint.
 
 ## v0.2.8: MCP tool annotations (M8ven flag)
 
