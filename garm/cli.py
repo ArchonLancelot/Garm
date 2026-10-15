@@ -284,11 +284,31 @@ def cmd_recall(args: argparse.Namespace) -> int:
             continue
         live.append(entry)
     # BM25 needs whole-corpus document frequencies: score in one pass.
-    scores = RU.score_corpus(query_keys, live)
+    semantic = None
+    ranks: dict[str, tuple[int, int]] = {}
+    if args.semantic:
+        from . import semantic as SEM
+        try:
+            semantic = SEM.SemanticIndex(base)
+            semantic.ensure_ready()
+        except SEM.SemanticError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        scores, ranks = RU.score_corpus(
+            query_keys, live, semantic=semantic,
+            query_text=args.task, return_ranks=True)
+    else:
+        scores = RU.score_corpus(query_keys, live)
     for entry in live:
-        total, sig_n, task_n, fix_b, ins_b = scores[entry["id"]]
+        total, sig_n, task_n, sem_n, fix_b, ins_b = scores[entry["id"]]
         overlap = RU.matched_terms(query_keys, entry)
-        scored.append((total, sig_n, task_n, fix_b, ins_b, overlap, entry))
+        tag = ""
+        if args.semantic:
+            rb, rs = ranks[entry["id"]]
+            if rs < rb:
+                tag = " [semantic]"
+        scored.append((total, sig_n, task_n, sem_n, fix_b, ins_b, overlap,
+                       tag, entry))
     if dead:
         print(f"dead routes (premise killed), skipped: {len(dead)}")
         for entry in dead:
@@ -305,17 +325,31 @@ def cmd_recall(args: argparse.Namespace) -> int:
     if not scored:
         print(f"no dossiers found in {base}")
         return 1
-    scored.sort(key=lambda s: (-s[0], -(s[3] + s[4]), s[6]["id"]))
+    scored.sort(key=lambda s: (-s[0], -(s[4] + s[5]), s[8]["id"]))
     top = max(1, args.top)
-    for total, sig_n, task_n, fix_b, ins_b, overlap, entry in scored[:top]:
+    for total, sig_n, task_n, sem_n, fix_b, ins_b, overlap, tag, entry in scored[:top]:
         matched = ",".join(overlap) if overlap else "-"
         fixes = entry.get("confirmed_fixes", 0)
         insights = entry.get("confirmed_insights", 0)
         origin = entry.get("origin") or "?"
         dead_mark = " [premise-dead]" if entry.get("premise_dead") else ""
+        sem_col = f" sem:{sem_n:.2f}" if args.semantic else ""
         print(f"{total:6.2f} | {entry['id']} | {entry['task']} "
-              f"[{entry['path']}] (from:{origin} sig:{sig_n:.2f} task:{task_n:.2f} "
-              f"fix:{fixes} insight:{insights} matched: {matched}){dead_mark}")
+              f"[{entry['path']}] (from:{origin} sig:{sig_n:.2f} task:{task_n:.2f}"
+              f"{sem_col} "
+              f"fix:{fixes} insight:{insights} matched: {matched}){dead_mark}{tag}")
+    return 0
+
+
+def cmd_semantic_warmup(args: argparse.Namespace) -> int:
+    """Download and cache the Tier 2 embedding model. The only command
+    that ever downloads the model."""
+    from . import semantic as SEM
+    try:
+        print(SEM.warmup())
+    except SEM.SemanticError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
     return 0
 
 
@@ -485,6 +519,11 @@ def build_parser() -> argparse.ArgumentParser:
             "dossiers that talk about the same things, weighted toward the "
             "parts of a dossier written to be matched on and toward dossiers "
             "with a track record. "
+            "With --semantic, an opt-in Tier 2 meaning lane takes the "
+            "lead: embedding cosine similarity (local model, one `garm semantic "
+            "warmup` needed) ranks by meaning, with the BM25 subscores still "
+            "shown; hits the meaning lane ranked above the BM25 lane are "
+            "tagged [semantic], and a sem: subscore column appears. "
             "Output columns per hit: TOTAL | id | task [path] "
             "(from:origin sig:<n> task:<n> fix:<n> insight:<n> "
             "matched: <terms>). sig: counts matched signature terms (each "
@@ -503,6 +542,12 @@ def build_parser() -> argparse.ArgumentParser:
                           help="also rank dead routes (premise killed), "
                                "marked [premise-dead]; by default they are "
                                "listed separately and excluded from ranking")
+    p_recall.add_argument("--semantic", action="store_true",
+                          help="opt-in meaning lane (Tier 2): rank by "
+                               "embedding cosine similarity (meaning) instead "
+                               "of BM25 keywords. Needs the fastembed package "
+                               "(pip install garm[semantic]) and one "
+                               "`garm semantic warmup` run.")
     p_recall.set_defaults(func=cmd_recall)
 
     p_list = sub.add_parser("list", help="compact table of dossiers")
@@ -611,6 +656,22 @@ def build_parser() -> argparse.ArgumentParser:
     p_plist = p_sub.add_parser("list", help="list registered premises")
     p_plist.add_argument("--dir", default="dossiers", help="dossier directory")
     p_plist.set_defaults(func=cmd_premise_list)
+
+    p_semantic = sub.add_parser(
+        "semantic", help="opt-in meaning lane (Tier 2) utilities")
+    sem_sub = p_semantic.add_subparsers(dest="semantic_cmd", required=True)
+    p_warmup = sem_sub.add_parser(
+        "warmup",
+        help="download the embedding model once and cache it",
+        description=(
+            "Download the Tier 2 embedding model (BAAI/bge-small-en-v1.5, "
+            "a few hundred MB) once and cache it locally. This is the "
+            "ONLY command that downloads the model — `garm recall "
+            "--semantic` never downloads mid-turn, it only reads the "
+            "cache. Needs the fastembed package: "
+            "pip install garm[semantic]."
+        ))
+    p_warmup.set_defaults(func=cmd_semantic_warmup)
 
     return parser
 

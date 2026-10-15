@@ -1,8 +1,8 @@
 """Hybrid retrieval: BM25 lexical scoring over canonicalized text with
-synonym aliases. v0.2.7.
+synonym aliases, plus an opt-in semantic lane. v0.2.9.
 
-Still no embeddings, no model calls, no network. Three upgrades over
-pure keyword overlap:
+Default path (no flags): still no embeddings, no model calls, no
+network. Three upgrades over pure keyword overlap:
 
 1. Symbol canonicalization: Unicode math symbols become words *before*
    tokenizing, so ``χ(G)`` and "chromatic number" share keywords, ``x²``
@@ -10,26 +10,34 @@ pure keyword overlap:
 2. Synonym aliases: a curated, readable map of equivalent terms. A query
    for "flaky" matches a dossier about "intermittent" failures; "primes"
    matches "prime"; "coloring" matches "chromatic".
-3. BM25 ranking (new): terms are weighted by inverse document frequency,
-   so a word appearing in every dossier (like "one") barely counts while
-   a rare, distinctive term counts a lot; term frequency saturates and
-   scores are normalized by dossier length. This fixes the failure the
-   2026-10-14 transfer test measured: generic-word noise outranking the
-   relevant dossier.
+3. BM25 ranking (new in v0.2.7): terms are weighted by inverse document
+   frequency, so a word appearing in every dossier (like "one") barely
+   counts while a rare, distinctive term counts a lot; term frequency
+   saturates and scores are normalized by dossier length. This fixes the
+   failure the 2026-10-14 transfer test measured: generic-word noise
+   outranking the relevant dossier.
 
-What BM25 does NOT fix: it is still lexical. A paraphrase sharing no
-vocabulary with the dossier ("reciprocals" vs "unit fractions") will not
-match unless the synonym map covers it — that is the honest limit, and
-the reason a future opt-in semantic backend would plug in at
-``score_corpus()``: it is the single scoring funnel, so a ``--semantic``
-flag could one day blend an embedding cosine into the total and mark it
-in the display.
+Tier 2 (opt-in, ``--semantic``): a meaning lane next to BM25. An
+embedding model (fastembed, Apache-2.0, ONNX, no PyTorch/GPU) turns the
+query and each dossier's signature/task text into vectors; cosine
+similarity finds dossiers that mean the same thing with different
+words — the paraphrase case BM25 provably cannot match. In semantic
+mode the meaning lane leads the ranking (``--semantic`` is an explicit
+statement that lexical matching failed for the query); the BM25
+subscores are still shown for inspectability. See ``garm/semantic.py``
+for the lane's own rules: explicit warmup, no mid-turn downloads, no
+silent fallback, inspectable subscores.
+
+What even Tier 2 does NOT fix: it is still retrieval, not judgment. A
+failing agent diagnosing its own failure (the self-diagnosis trust gap)
+and cross-domain transfer are separate problems.
 
 The scoring *shape* is unchanged (signature terms are the retrieval key
 and count double, task terms single, confirms boost up to 5 each) — only
-the term weighting got smarter. Recall output shows alias matches as
-``query~dossier-term`` so the matching stays inspectable; nothing is
-a black box.
+the term weighting got smarter, and the semantic lane adds a fourth
+subscore. Recall output shows alias matches as ``query~dossier-term``
+and meaning-lane rescues as ``[semantic]`` so the matching stays
+inspectable; nothing is a black box.
 
 The synonym map is data, not intelligence: hand-curated, deliberately
 incomplete, and fully visible below.
@@ -292,10 +300,14 @@ class BM25:
 
 
 def score_corpus(query_keys: list[str], entries: list[dict],
-                 confirmed_boost_cap: int = 5
-                 ) -> dict[str, tuple[float, float, float, int, int]]:
+                 confirmed_boost_cap: int = 5,
+                 semantic=None, query_text: str | None = None,
+                 return_ranks: bool = False
+                 ) -> dict[str, tuple[float, float, float, float, int, int]
+                            ] | tuple[dict, dict[str, tuple[int, int]]]:
     """Rank every entry with BM25. Returns
-    ``{dossier_id: (total, sig_score, task_score, fix_boost, ins_boost)}``.
+    ``{dossier_id: (total, sig_score, task_score, sem_score, fix_boost,
+    ins_boost)}``.
 
     Two BM25 fields preserve the v0.2 design: the failure signature is
     the retrieval key, so its BM25 subscore counts double; task-keyword
@@ -303,9 +315,30 @@ def score_corpus(query_keys: list[str], entries: list[dict],
     Query keys are alias-expanded before scoring, exactly as the old
     per-entry scorer did — only the term weighting got smarter.
 
-    This is the single scoring funnel: a future opt-in semantic backend
-    would blend an embedding cosine into ``total`` here.
+    This is the single scoring funnel. The opt-in semantic lane (Tier 2,
+    v0.2.9) plugs in here: pass a ``garm.semantic.SemanticIndex`` as
+    ``semantic`` (plus the raw ``query_text`` — embeddings want the raw
+    query, not keyword lists). The semantic subscore is shaped like the
+    BM25 total (signature cosine double, task cosine single).
+
+    Ranking in semantic mode: the semantic lane leads. ``--semantic`` is
+    an explicit statement that lexical matching failed for this query,
+    so results order by semantic rank; the BM25 subscores are still
+    computed and displayed (inspectability), and the ``[semantic]`` tag
+    marks hits the meaning lane ranked above the BM25 lane. An earlier
+    revision fused both lanes with Reciprocal Rank Fusion, but RRF gives
+    equal weight to a BM25 lane that is confidently wrong on paraphrases
+    — the exact failure --semantic exists to escape — so the meaning
+    lane leads instead. Confirm boosts are folded into the semantic
+    ranking (a capped-int boost added raw on top of rank scores would
+    make boosts the entire ranking). With ``return_ranks=True`` returns
+    ``(scores, {id: (bm25_rank, sem_rank)})`` as well.
+
+    With ``semantic=None`` (the default) nothing changes: ``sem_score``
+    is 0.0 and the other five values are byte-identical to v0.2.7.
+    fastembed is imported nowhere on this path.
     """
+    from . import semantic as _sem  # local: keeps the import graph honest
     groups = [aliases_for(k) for k in query_keys]
     sig_docs: list[Counter] = []
     task_docs: list[Counter] = []
@@ -317,14 +350,41 @@ def score_corpus(query_keys: list[str], entries: list[dict],
         task_docs.append(Counter(task))
     sig_scores = BM25(sig_docs).score_many(groups)
     task_scores = BM25(task_docs).score_many(groups)
-    out: dict[str, tuple[float, float, float, int, int]] = {}
+    boosts: dict[str, tuple[int, int]] = {}
+    for e in entries:
+        boosts[e["id"]] = (
+            min(int(e.get("confirmed_fixes", 0) or 0), confirmed_boost_cap),
+            min(int(e.get("confirmed_insights", 0) or 0),
+                confirmed_boost_cap),
+        )
+    out: dict[str, tuple[float, float, float, float, int, int]] = {}
+    ranks: dict[str, tuple[int, int]] = {}
+    if semantic is None:
+        for e, ss, ts in zip(entries, sig_scores, task_scores):
+            fix_b, ins_b = boosts[e["id"]]
+            out[e["id"]] = (2 * ss + ts + fix_b + ins_b, ss, ts, 0.0,
+                            fix_b, ins_b)
+        return (out, ranks) if return_ranks else out
+    # --- semantic lane (Tier 2): meaning leads, BM25 is displayed ---
+    sem_scores = semantic.score_entries(query_text or "", entries)
+    bm25_totals = {}
+    sem_totals = {}
     for e, ss, ts in zip(entries, sig_scores, task_scores):
-        fix_b = min(int(e.get("confirmed_fixes", 0) or 0),
-                    confirmed_boost_cap)
-        ins_b = min(int(e.get("confirmed_insights", 0) or 0),
-                    confirmed_boost_cap)
-        out[e["id"]] = (2 * ss + ts + fix_b + ins_b, ss, ts, fix_b, ins_b)
-    return out
+        fix_b, ins_b = boosts[e["id"]]
+        bm25_totals[e["id"]] = 2 * ss + ts + fix_b + ins_b
+        sem_totals[e["id"]] = sem_scores[e["id"]] + fix_b + ins_b
+    bm25_ranks = _sem.rank_ids(bm25_totals)
+    sem_ranks = _sem.rank_ids(sem_totals)
+    for e, ss, ts in zip(entries, sig_scores, task_scores):
+        eid = e["id"]
+        fix_b, ins_b = boosts[eid]
+        # Total is the semantic score plus confirm boosts: the lane the
+        # user asked for leads, and the scale stays interpretable
+        # (cosine-based, roughly [-3, 3] before boosts).
+        out[eid] = (sem_totals[eid], ss, ts,
+                    sem_scores[eid], fix_b, ins_b)
+        ranks[eid] = (bm25_ranks[eid], sem_ranks[eid])
+    return (out, ranks) if return_ranks else out
 
 
 def matched_terms(query_keys: list[str], entry: dict) -> list[str]:

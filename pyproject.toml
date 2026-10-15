@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "garm"
+version = "0.2.9"
+description = "A failure memory for coding agents"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+
+[project.optional-dependencies]
+# Tier 2 opt-in meaning lane: embedding model via ONNX (no PyTorch, no GPU).
+# Install with: pip install garm[semantic]
+# The default install stays stdlib-only.
+semantic = ["fastembed>=0.3"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["garm*"]

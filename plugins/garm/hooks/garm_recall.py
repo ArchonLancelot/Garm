@@ -9,7 +9,8 @@ past failure autopsies *before* it starts on the prompt.
 Design rules (the hook sits on the interactive critical path):
   * Never break the session. Any error, missing binary, missing dir, or
     timeout -> exit 0 with no stdout. Diagnostics go to stderr only.
-  * No network, no model calls, no tokens. Pure local stdlib.
+  * No network, no tokens. Pure local stdlib by default; GARM_SEMANTIC=1
+    additionally runs local embedding inference (no network).
   * additionalContext is framed as factual statements about past runs,
     not as instructions — per Claude Code's injection guidance.
   * The prompt itself is never logged or written anywhere.
@@ -22,7 +23,14 @@ Configuration (environment):
   GARM_TOP        max dossiers to inject (default: 3)
   GARM_MIN_SCORE  minimum recall score to inject anything (default: 1;
   BM25 scores run smaller than the old integer counts, so the default
-  was recalibrated — raise it if the hook chatters)
+  was recalibrated — raise it if the hook chatters. Semantic totals are
+  cosine-based on a similar scale, so the same default applies with
+  GARM_SEMANTIC=1.)
+  GARM_SEMANTIC   set to "1" to opt into the Tier 2 meaning lane: the
+  hook passes --semantic to recall. This runs local embedding inference
+  (still no network; the model must already be warmed with
+  `garm semantic warmup`, and dossier vectors are cached) — about tens
+  of ms of CPU per prompt. Off by default: the hook stays pure stdlib.
 
 Hook protocol (UserPromptSubmit):
   stdin:  {"session_id": ..., "hook_event_name": "UserPromptSubmit",
@@ -105,6 +113,10 @@ def main() -> int:
         return 0
 
     top = _int_env("GARM_TOP", 3) or 3
+    semantic = os.environ.get("GARM_SEMANTIC") == "1"
+    # Semantic totals are cosine-based (roughly [-3, 3] before boosts);
+    # 1.0 means "meaningfully similar". An explicit GARM_MIN_SCORE
+    # always wins over the default.
     min_score = _float_env("GARM_MIN_SCORE", 1.0)
 
     env = dict(os.environ)
@@ -122,6 +134,8 @@ def main() -> int:
         "--dir", dossier_dir,
         "--top", str(top),
     ]
+    if semantic:
+        argv.append("--semantic")
     try:
         proc = subprocess.run(
             argv, env=env, capture_output=True, text=True,

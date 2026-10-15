@@ -29,6 +29,7 @@ from garm import autopsy as AU
 from garm import dossier as D
 from garm import premise as PR
 from garm import retrieval as RU
+from garm import semantic as SEM
 
 server = MCPServer("garm")
 
@@ -65,6 +66,7 @@ def _require_bank(d: str | None) -> Path:
 def recall_impl(task: str, top: int = 3,
                 failure_class: str | None = None,
                 include_dead: bool = False,
+                semantic: bool = False,
                 dir: str | None = None) -> str:
     """Rank failure dossiers for a task description.
 
@@ -73,8 +75,11 @@ def recall_impl(task: str, top: int = 3,
     v0.2.7: BM25 term weighting — Unicode math symbols are canonicalized
     and query terms expand through a curated synonym map (still lexical,
     no embeddings). ``matched_terms`` shows alias matches as
-    ``query~dossier-term``. Returns a JSON array (as text) of ranked
-    dossier objects.
+    ``query~dossier-term``. v0.2.9: ``semantic=true`` opts into the Tier 2
+    meaning lane — embedding cosine similarity leading the ranking
+    (needs the fastembed package and one ``garm semantic warmup`` run;
+    hard error otherwise, never silent fallback). Returns a JSON array
+    (as text) of ranked dossier objects.
     """
     base = _require_bank(dir)
     if (failure_class is not None
@@ -99,9 +104,18 @@ def recall_impl(task: str, top: int = 3,
             continue
         live.append(entry)
     # BM25 needs whole-corpus document frequencies: score in one pass.
-    scores = RU.score_corpus(query_keys, live)
+    ranks: dict[str, tuple[int, int]] = {}
+    if semantic:
+        sem_backend = SEM.SemanticIndex(base)
+        sem_backend.ensure_ready()  # hard error, never silent fallback
+        scores, ranks = RU.score_corpus(
+            query_keys, live, semantic=sem_backend,
+            query_text=task, return_ranks=True)
+    else:
+        scores = RU.score_corpus(query_keys, live)
     for entry in live:
-        total, sig_n, task_n, _fix_b, _ins_b = scores[entry["id"]]
+        total, sig_n, task_n, sem_n, _fix_b, _ins_b = scores[entry["id"]]
+        rb, rs = ranks.get(entry["id"], (0, 0))
         scored.append({
             "id": entry["id"],
             "task": entry["task"],
@@ -110,6 +124,8 @@ def recall_impl(task: str, top: int = 3,
             "matched_terms": RU.matched_terms(query_keys, entry),
             "signature_matches": sig_n,
             "task_matches": task_n,
+            "semantic_score": sem_n,
+            "semantic_lane_first": bool(semantic and rs < rb),
             "confirmed_fixes": entry["confirmed_fixes"],
             "confirmed_insights": entry["confirmed_insights"],
             "failure_class": entry["failure_class"],
@@ -307,14 +323,17 @@ server.tool(
     name="garm_recall",
     description=(
         "Rank past failure dossiers for a task description. BM25 lexical "
-        "scoring (NOT semantic): signature-term matches count double, "
+        "scoring (signature-term matches count double, "
         "task-term matches single, confirmed dossiers gain "
-        "up to +5 each. v0.2.7: terms weighted by rarity, math symbols are "
+        "up to +5 each). v0.2.7: terms weighted by rarity, math symbols are "
         "canonicalized to words and query terms expand through a curated "
-        "synonym map, so paraphrases match — still no embeddings. Returns "
-        "a JSON array of ranked dossiers with scores, signatures, matched "
-        "terms (alias matches shown as query~dossier-term), and confirm "
-        "counts."
+        "synonym map, so paraphrases match. v0.2.9: set semantic=true for "
+        "the opt-in Tier 2 meaning lane — embedding cosine similarity "
+        "leading the ranking (needs the fastembed "
+        "package and one `garm semantic warmup` run; hard error otherwise). "
+        "Returns a JSON array of ranked dossiers with scores, signatures, "
+        "matched terms (alias matches shown as query~dossier-term), and "
+        "confirm counts."
     ),
     annotations=_ann(read_only=True, idempotent=True),
 )(recall_impl)
