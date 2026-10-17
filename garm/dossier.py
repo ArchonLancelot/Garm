@@ -128,10 +128,15 @@ def extract_keywords(text: str) -> list[str]:
     ``garm/retrieval.py``), so "χ(G)" and "chromatic number" share
     keywords. Still no embeddings, no model calls — just smarter
     tokenizing. Synonym expansion happens at match time, not here.
+
+    v0.2.10: duplicates are KEPT (no ``token in keywords`` dedup) so the
+    downstream ``Counter`` sees real term frequencies. Blind-agent
+    validation 2026-10-16 found the dedup forced BM25 tf to 1, defeating
+    term-frequency saturation.
     """
     keywords: list[str] = []
     for token in re.findall(r"[a-z0-9]+", RU.canonicalize_text(text).lower()):
-        if len(token) < 2 or token in _STOPWORDS or token in keywords:
+        if len(token) < 2 or token in _STOPWORDS:
             continue
         keywords.append(token)
     return keywords
@@ -427,6 +432,16 @@ def build_index_entry(dossier_path: Path, base_dir: Path,
             break
     task_keywords = extract_keywords(fm["task"])
     sig_keywords = extract_keywords(signature_text)
+    # v0.2.10: index the body sections too. Blind-agent validation
+    # 2026-10-16 found recall was blind to every section except task and
+    # failure signature — a term appearing only in Root cause or Blocking
+    # constraint could never match. Body text is everything except the
+    # signature (already indexed) and the premises list (bare IDs).
+    body_text = "\n".join(
+        text for name, text in sections.items()
+        if name not in ("failure signature", "premises") and text.strip()
+    )
+    body_keywords = extract_keywords(body_text)
     premise_refs = P.parse_premise_refs(sections.get("premises", ""))
     dead_premises: list[str] = []
     if registry is not None and premise_refs:
@@ -439,6 +454,8 @@ def build_index_entry(dossier_path: Path, base_dir: Path,
         "signature": signature_line[:140],
         "keywords": task_keywords + [k for k in sig_keywords if k not in task_keywords],
         "sig_keywords": sig_keywords,
+        "body_keywords": body_keywords,
+        "body": body_text[:4000],
         "failure_class": fm.get("failure_class") or None,
         "confirmed_fixes": _confirmed_fixes_of(fm),
         "confirmed_insights": _confirmed_insights_of(fm),
@@ -707,7 +724,20 @@ def import_dossiers(
 
     imported: list[tuple[str, str, str]] = []
     skipped: list[tuple[str, str]] = []
-    premises_merged: dict[str, list] = {"added": [], "skipped": []}
+    premises_merged: dict[str, list] = {"added": [], "skipped": [],
+                                        "renamed": {}}
+    # v0.2.10: premise renames need the source agent for the
+    # --from-<agent> suffix. Take the most common frontmatter agent
+    # across the candidate dossiers.
+    agent_votes: dict[str, int] = {}
+    for cand_path in candidates:
+        try:
+            ag = read_dossier(cand_path)["frontmatter"].get("agent", "")
+        except ValueError:
+            continue
+        if ag:
+            agent_votes[ag] = agent_votes.get(ag, 0) + 1
+    src_agent = max(agent_votes, key=agent_votes.get) if agent_votes else ""
     if src.is_dir():
         reg_file = src / "premises.json"
         if reg_file.exists():
@@ -715,9 +745,11 @@ def import_dossiers(
 
             try:
                 incoming = json.loads(reg_file.read_text(encoding="utf-8"))
-                premises_merged = P.merge_registry(dest, incoming)
+                premises_merged = P.merge_registry(dest, incoming,
+                                                   agent=src_agent)
             except (OSError, json.JSONDecodeError, ValueError) as exc:
                 skipped.append(("premises.json", f"registry not merged: {exc}"))
+    premise_renames: dict[str, str] = premises_merged.get("renamed", {}) or {}
     for cand_path in candidates:
         errors = validate_dossier(cand_path)
         if errors:
@@ -751,6 +783,12 @@ def import_dossiers(
                     (cand_path.name, f"renamed id {new_id!r} is invalid")
                 )
                 continue
+        # v0.2.10: rewrite premise refs when premises were renamed on
+        # import collision, so dossier -> premise links stay intact.
+        if premise_renames:
+            for old_pid, new_pid in premise_renames.items():
+                text = re.sub(r"\b" + re.escape(old_pid) + r"(?![-\w])",
+                              new_pid, text)
         final_path = dest / f"{new_id}.md"
         final_path.write_text(text, encoding="utf-8")
         taken.add(new_id)

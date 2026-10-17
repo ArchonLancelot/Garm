@@ -37,7 +37,24 @@ from pathlib import Path
 REGISTRY_FILENAME = "premises.json"
 REGISTRY_VERSION = "0.2.4"
 
-PREMISE_ID_RE = re.compile(r"^P-\d{8}-\d{3}$")
+PREMISE_ID_RE = re.compile(r"^P-\d{8}-\d{3}(--from-[a-z0-9-]+)?(-\d+)?$")
+# v0.2.10: premise ids can carry the --from-<agent> rename suffix on
+# import collision (mirroring dossier ids), with -2, -3... for repeats.
+
+
+def _unique_premise_id(wanted: str, agent: str, taken: set[str]) -> str:
+    """Rename on collision: ``<pid>--from-<agent>``, with -2, -3... if that
+    also collides. Mirrors dossier ``_unique_import_id`` — never silently
+    overwrites an existing premise."""
+    from .dossier import slugify
+    if wanted not in taken:
+        return wanted
+    base = f"{wanted}--from-{slugify(agent or 'unknown')}"
+    cand, n = base, 2
+    while cand in taken:
+        cand = f"{base}-{n}"
+        n += 1
+    return cand
 
 # Generated dossier ids are always "<date>-<slug>", so a --by value with
 # this shape is meant to be a dossier id, not a free-text note.
@@ -383,18 +400,27 @@ def _killed_by_dossier(data: dict, premise_id: str, dossier_id: str) -> bool:
 
 
 def merge_registry(
-    dest_dir: str | Path, incoming: dict
+    dest_dir: str | Path, incoming: dict, agent: str | None = None
 ) -> dict[str, list]:
     """Merge an imported ``premises.json`` into the destination bank.
 
-    Never overwrites: ids that already exist are kept (collisions with a
-    *different* statement are skipped and reported). Returns
-    ``{"added": [ids], "skipped": [(id, reason)]}``.
+    Never overwrites: ids that already exist are kept. v0.2.10: a
+    collision with a *different* statement renames the incoming premise
+    to ``<pid>--from-<agent>`` (mirroring dossier id renames) instead of
+    dropping it — blind-agent validation 2026-10-16 found colliding
+    premises were silently lost on multi-bank import. ``depends_on``
+    references inside the incoming batch are rewritten to the new ids.
+    Returns ``{"added": [ids], "skipped": [(id, reason)], "renamed":
+    {old_id: new_id}}``.
     """
     dest = load_registry(dest_dir)
     dest_p = _premises(dest)
     added: list[str] = []
     skipped: list[tuple[str, str]] = []
+    renamed: dict[str, str] = {}
+    taken: set[str] = set(dest_p)
+    # First pass: decide final ids (validates + renames).
+    planned: list[tuple[str, str, dict]] = []
     for pid, entry in (incoming.get("premises") or {}).items():
         if not isinstance(pid, str) or not PREMISE_ID_RE.match(pid):
             skipped.append((str(pid), "malformed premise id"))
@@ -402,29 +428,33 @@ def merge_registry(
         if not isinstance(entry, dict):
             skipped.append((pid, "malformed premise entry"))
             continue
-        if pid in dest_p:
-            if dest_p[pid].get("statement") == entry.get("statement"):
-                skipped.append((pid, "already registered (identical)"))
-            else:
-                skipped.append(
-                    (pid, "id collision with different statement — kept local")
-                )
-            continue
         if entry.get("status") not in VALID_STATUSES:
             skipped.append((pid, "unknown status"))
             continue
         if entry.get("evidence") is not None and entry.get("evidence") not in VALID_EVIDENCE:
             skipped.append((pid, "unknown evidence value"))
             continue
-        dest_p[pid] = {
+        final = pid
+        if pid in dest_p:
+            if dest_p[pid].get("statement") == entry.get("statement"):
+                skipped.append((pid, "already registered (identical)"))
+                continue
+            final = _unique_premise_id(pid, agent or "unknown", taken)
+            renamed[pid] = final
+        taken.add(final)
+        planned.append((pid, final, entry))
+    # Second pass: write entries, rewriting depends_on to renamed ids.
+    for pid, final, entry in planned:
+        deps = [renamed.get(d, d) for d in (entry.get("depends_on") or [])]
+        dest_p[final] = {
             "statement": entry.get("statement", ""),
-            "depends_on": list(entry.get("depends_on", []) or []),
+            "depends_on": deps,
             "status": entry.get("status", "open"),
             "killed_by": entry.get("killed_by"),
             "evidence": entry.get("evidence"),
             "created": entry.get("created", ""),
         }
-        added.append(pid)
+        added.append(final)
     dest["version"] = REGISTRY_VERSION
     save_registry(dest_dir, dest)
-    return {"added": sorted(added), "skipped": skipped}
+    return {"added": sorted(added), "skipped": skipped, "renamed": renamed}
