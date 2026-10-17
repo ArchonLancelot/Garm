@@ -114,7 +114,8 @@ def recall_impl(task: str, top: int = 3,
     else:
         scores = RU.score_corpus(query_keys, live)
     for entry in live:
-        total, sig_n, task_n, sem_n, _fix_b, _ins_b = scores[entry["id"]]
+        total, sig_n, task_n, body_n, sem_n, _fix_b, _ins_b = scores[
+            entry["id"]]
         rb, rs = ranks.get(entry["id"], (0, 0))
         scored.append({
             "id": entry["id"],
@@ -124,6 +125,7 @@ def recall_impl(task: str, top: int = 3,
             "matched_terms": RU.matched_terms(query_keys, entry),
             "signature_matches": sig_n,
             "task_matches": task_n,
+            "body_matches": body_n,
             "semantic_score": sem_n,
             "semantic_lane_first": bool(semantic and rs < rb),
             "confirmed_fixes": entry["confirmed_fixes"],

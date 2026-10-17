@@ -187,9 +187,9 @@ def cosine(a: list[float], b: list[float]) -> float:
     return dot / (na * nb)
 
 
-def _content_hash(sig_text: str, task_text: str) -> str:
+def _content_hash(sig_text: str, task_text: str, body_text: str = "") -> str:
     return hashlib.sha1(
-        f"{MODEL_NAME}\0{sig_text}\0{task_text}".encode("utf-8")
+        f"{MODEL_NAME}\0{sig_text}\0{task_text}\0{body_text}".encode("utf-8")
     ).hexdigest()
 
 
@@ -266,28 +266,34 @@ class SemanticIndex:
         self._dirty = False
 
     def _vectors_for(self, dossier_id: str, sig_text: str,
-                     task_text: str) -> tuple[list[float], list[float]]:
-        """(sig_vector, task_vector), from cache or freshly embedded."""
+                     task_text: str, body_text: str = ""
+                     ) -> tuple[list[float], list[float], list[float]]:
+        """(sig_vector, task_vector, body_vector), from cache or freshly
+        embedded. v0.2.10 added the body vector — the body sections are
+        now indexed (see build_index_entry), so the meaning lane sees
+        them too."""
         if not self._cache and not self._dirty:
             self._load_cache()
-        want = _content_hash(sig_text, task_text)
+        want = _content_hash(sig_text, task_text, body_text)
         hit = self._cache.get(dossier_id)
         if (isinstance(hit, dict) and hit.get("hash") == want
                 and isinstance(hit.get("sig"), list)
-                and isinstance(hit.get("task"), list)):
-            return hit["sig"], hit["task"]
+                and isinstance(hit.get("task"), list)
+                and isinstance(hit.get("body"), list)):
+            return hit["sig"], hit["task"], hit["body"]
         model = self._get_model()
         vecs = list(model.embed([
             _PASSAGE_PREFIX + sig_text,
             _PASSAGE_PREFIX + task_text,
+            _PASSAGE_PREFIX + body_text,
         ]))
-        sig_v, task_v = [list(map(float, v)) for v in vecs]
+        sig_v, task_v, body_v = [list(map(float, v)) for v in vecs]
         self._cache[dossier_id] = {
             "model": MODEL_NAME, "hash": want,
-            "sig": sig_v, "task": task_v,
+            "sig": sig_v, "task": task_v, "body": body_v,
         }
         self._dirty = True
-        return sig_v, task_v
+        return sig_v, task_v, body_v
 
     # -- scoring ---------------------------------------------------------
     def score_entries(self, query_text: str,
@@ -302,9 +308,11 @@ class SemanticIndex:
             model.embed([_QUERY_PREFIX + query_text]))[0]))
         out: dict[str, float] = {}
         for e in entries:
-            sig_v, task_v = self._vectors_for(
-                e["id"], e.get("signature") or "", e.get("task") or "")
-            out[e["id"]] = 2 * cosine(qv, sig_v) + cosine(qv, task_v)
+            sig_v, task_v, body_v = self._vectors_for(
+                e["id"], e.get("signature") or "", e.get("task") or "",
+                e.get("body") or "")
+            out[e["id"]] = (2 * cosine(qv, sig_v) + cosine(qv, task_v)
+                            + cosine(qv, body_v))
         self._save_cache()
         return out
 

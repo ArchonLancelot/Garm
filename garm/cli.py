@@ -238,6 +238,8 @@ def cmd_import(args: argparse.Namespace) -> int:
     premises = result.get("premises", {}) or {}
     for pid in premises.get("added", []):
         print(f"premise imported: {pid}")
+    for old_pid, new_pid in (premises.get("renamed", {}) or {}).items():
+        print(f"premise imported: {old_pid} -> {new_pid} (id collision, renamed)")
     for pid, reason in premises.get("skipped", []):
         print(f"premise skipped: {pid} ({reason})", file=sys.stderr)
     n, _ = D.rebuild_index(base)
@@ -300,15 +302,16 @@ def cmd_recall(args: argparse.Namespace) -> int:
     else:
         scores = RU.score_corpus(query_keys, live)
     for entry in live:
-        total, sig_n, task_n, sem_n, fix_b, ins_b = scores[entry["id"]]
+        total, sig_n, task_n, body_n, sem_n, fix_b, ins_b = scores[
+            entry["id"]]
         overlap = RU.matched_terms(query_keys, entry)
         tag = ""
         if args.semantic:
             rb, rs = ranks[entry["id"]]
             if rs < rb:
                 tag = " [semantic]"
-        scored.append((total, sig_n, task_n, sem_n, fix_b, ins_b, overlap,
-                       tag, entry))
+        scored.append((total, sig_n, task_n, body_n, sem_n, fix_b, ins_b,
+                       overlap, tag, entry))
     if dead:
         print(f"dead routes (premise killed), skipped: {len(dead)}")
         for entry in dead:
@@ -325,9 +328,10 @@ def cmd_recall(args: argparse.Namespace) -> int:
     if not scored:
         print(f"no dossiers found in {base}")
         return 1
-    scored.sort(key=lambda s: (-s[0], -(s[4] + s[5]), s[8]["id"]))
+    scored.sort(key=lambda s: (-s[0], -(s[5] + s[6]), s[9]["id"]))
     top = max(1, args.top)
-    for total, sig_n, task_n, sem_n, fix_b, ins_b, overlap, tag, entry in scored[:top]:
+    for (total, sig_n, task_n, body_n, sem_n, fix_b, ins_b, overlap, tag,
+         entry) in scored[:top]:
         matched = ",".join(overlap) if overlap else "-"
         fixes = entry.get("confirmed_fixes", 0)
         insights = entry.get("confirmed_insights", 0)
@@ -336,7 +340,7 @@ def cmd_recall(args: argparse.Namespace) -> int:
         sem_col = f" sem:{sem_n:.2f}" if args.semantic else ""
         print(f"{total:6.2f} | {entry['id']} | {entry['task']} "
               f"[{entry['path']}] (from:{origin} sig:{sig_n:.2f} task:{task_n:.2f}"
-              f"{sem_col} "
+              f" body:{body_n:.2f}{sem_col} "
               f"fix:{fixes} insight:{insights} matched: {matched}){dead_mark}{tag}")
     return 0
 

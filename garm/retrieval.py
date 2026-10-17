@@ -303,15 +303,19 @@ def score_corpus(query_keys: list[str], entries: list[dict],
                  confirmed_boost_cap: int = 5,
                  semantic=None, query_text: str | None = None,
                  return_ranks: bool = False
-                 ) -> dict[str, tuple[float, float, float, float, int, int]
+                 ) -> dict[str, tuple[float, float, float, float, float, int, int]
                             ] | tuple[dict, dict[str, tuple[int, int]]]:
     """Rank every entry with BM25. Returns
-    ``{dossier_id: (total, sig_score, task_score, sem_score, fix_boost,
-    ins_boost)}``.
+    ``{dossier_id: (total, sig_score, task_score, body_score, sem_score,
+    fix_boost, ins_boost)}``.
 
-    Two BM25 fields preserve the v0.2 design: the failure signature is
-    the retrieval key, so its BM25 subscore counts double; task-keyword
-    subscores count single. Confirm boosts are unchanged (capped ints).
+    Three BM25 fields: the failure signature is the retrieval key, so its
+    BM25 subscore counts double; task-keyword and body-keyword subscores
+    count single each. v0.2.10 added the body field — previously only
+    task and failure signature were indexed, so terms appearing only in
+    Root cause / Blocking constraint / etc. could never match. Confirm
+    boosts are capped ints, applied only when the base lane score is
+    positive (v0.2.10: boosts amplify evidence, never manufacture it).
     Query keys are alias-expanded before scoring, exactly as the old
     per-entry scorer did — only the term weighting got smarter.
 
@@ -334,22 +338,38 @@ def score_corpus(query_keys: list[str], entries: list[dict],
     make boosts the entire ranking). With ``return_ranks=True`` returns
     ``(scores, {id: (bm25_rank, sem_rank)})`` as well.
 
-    With ``semantic=None`` (the default) nothing changes: ``sem_score``
-    is 0.0 and the other five values are byte-identical to v0.2.7.
-    fastembed is imported nowhere on this path.
+    With ``semantic=None`` (the default) ``sem_score`` is 0.0 and
+    fastembed is imported nowhere on this path. v0.2.10 changed the
+    default path vs v0.2.7-v0.2.9: body sections are indexed, document
+    term frequencies are real (not deduped to 1), and confirm boosts
+    apply only on positive base scores.
     """
     from . import semantic as _sem  # local: keeps the import graph honest
-    groups = [aliases_for(k) for k in query_keys]
+    # v0.2.10: query keys stay a set (deduped) — v0.2.10 restored real term
+    # frequencies on the DOCUMENT side (extract_keywords no longer dedups),
+    # but query-side repeats must not double-count a term's contribution.
+    seen: set[str] = set()
+    uniq_keys: list[str] = []
+    for k in query_keys:
+        if k not in seen:
+            seen.add(k)
+            uniq_keys.append(k)
+    groups = [aliases_for(k) for k in uniq_keys]
     sig_docs: list[Counter] = []
     task_docs: list[Counter] = []
+    body_docs: list[Counter] = []
     for e in entries:
         sig = e.get("sig_keywords") or []
         sigset = set(sig)
         task = [k for k in (e.get("keywords") or []) if k not in sigset]
         sig_docs.append(Counter(sig))
         task_docs.append(Counter(task))
+        # v0.2.10: body sections are indexed too (see build_index_entry).
+        # Old index files predate the field — .get defaults to [].
+        body_docs.append(Counter(e.get("body_keywords") or []))
     sig_scores = BM25(sig_docs).score_many(groups)
     task_scores = BM25(task_docs).score_many(groups)
+    body_scores = BM25(body_docs).score_many(groups)
     boosts: dict[str, tuple[int, int]] = {}
     for e in entries:
         boosts[e["id"]] = (
@@ -357,31 +377,43 @@ def score_corpus(query_keys: list[str], entries: list[dict],
             min(int(e.get("confirmed_insights", 0) or 0),
                 confirmed_boost_cap),
         )
-    out: dict[str, tuple[float, float, float, float, int, int]] = {}
+    out: dict[str, tuple[float, float, float, float, float, int, int]] = {}
     ranks: dict[str, tuple[int, int]] = {}
+
+    def _gated_boosts(base: float, eid: str) -> tuple[int, int]:
+        # v0.2.10: boosts amplify evidence of relevance; they must not
+        # manufacture it. Zero base score (no overlap at all) gets no
+        # boost — otherwise confirmed dossiers inject into every prompt
+        # regardless of relevance (blind-agent validation 2026-10-16).
+        if base <= 0:
+            return (0, 0)
+        return boosts[eid]
+
     if semantic is None:
-        for e, ss, ts in zip(entries, sig_scores, task_scores):
-            fix_b, ins_b = boosts[e["id"]]
-            out[e["id"]] = (2 * ss + ts + fix_b + ins_b, ss, ts, 0.0,
-                            fix_b, ins_b)
+        for e, ss, ts, bs in zip(entries, sig_scores, task_scores,
+                                 body_scores):
+            fix_b, ins_b = _gated_boosts(2 * ss + ts + bs, e["id"])
+            out[e["id"]] = (2 * ss + ts + bs + fix_b + ins_b, ss, ts, bs,
+                            0.0, fix_b, ins_b)
         return (out, ranks) if return_ranks else out
     # --- semantic lane (Tier 2): meaning leads, BM25 is displayed ---
     sem_scores = semantic.score_entries(query_text or "", entries)
     bm25_totals = {}
     sem_totals = {}
-    for e, ss, ts in zip(entries, sig_scores, task_scores):
-        fix_b, ins_b = boosts[e["id"]]
-        bm25_totals[e["id"]] = 2 * ss + ts + fix_b + ins_b
-        sem_totals[e["id"]] = sem_scores[e["id"]] + fix_b + ins_b
+    for e, ss, ts, bs in zip(entries, sig_scores, task_scores, body_scores):
+        fix_b, ins_b = _gated_boosts(2 * ss + ts + bs, e["id"])
+        bm25_totals[e["id"]] = 2 * ss + ts + bs + fix_b + ins_b
+        sem_fix_b, sem_ins_b = _gated_boosts(sem_scores[e["id"]], e["id"])
+        sem_totals[e["id"]] = sem_scores[e["id"]] + sem_fix_b + sem_ins_b
     bm25_ranks = _sem.rank_ids(bm25_totals)
     sem_ranks = _sem.rank_ids(sem_totals)
-    for e, ss, ts in zip(entries, sig_scores, task_scores):
+    for e, ss, ts, bs in zip(entries, sig_scores, task_scores, body_scores):
         eid = e["id"]
-        fix_b, ins_b = boosts[eid]
+        fix_b, ins_b = _gated_boosts(sem_scores[eid], eid)
         # Total is the semantic score plus confirm boosts: the lane the
         # user asked for leads, and the scale stays interpretable
         # (cosine-based, roughly [-3, 3] before boosts).
-        out[eid] = (sem_totals[eid], ss, ts,
+        out[eid] = (sem_totals[eid], ss, ts, bs,
                     sem_scores[eid], fix_b, ins_b)
         ranks[eid] = (bm25_ranks[eid], sem_ranks[eid])
     return (out, ranks) if return_ranks else out
@@ -394,8 +426,13 @@ def matched_terms(query_keys: list[str], entry: dict) -> list[str]:
     matches were exact and which were aliases."""
     shown: list[str] = []
     keywords = entry.get("keywords", [])
+    # v0.2.10: body keywords are matchable too — check them when the
+    # task/signature keywords miss.
+    body_keywords = entry.get("body_keywords", [])
     for key in query_keys:
         hit = find_match(key, keywords)
+        if hit is None:
+            hit = find_match(key, body_keywords)
         if hit is None:
             continue
         shown.append(key if hit == key else f"{key}~{hit}")
