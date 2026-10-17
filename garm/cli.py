@@ -560,11 +560,13 @@ def build_parser() -> argparse.ArgumentParser:
                                "marked [premise-dead]; by default they are "
                                "listed separately and excluded from ranking")
     p_recall.add_argument("--semantic", action="store_true",
-                          help="opt-in meaning lane (Tier 2): rank by "
+                          help="EXPERIMENTAL opt-in meaning lane (Tier 2): rank by "
                                "embedding cosine similarity (meaning) instead "
                                "of BM25 keywords. Needs the fastembed package "
                                "(pip install garm[semantic]) and one "
-                               "`garm semantic warmup` run.")
+                               "`garm semantic warmup` run. Field tests show it "
+                               "does not reliably beat BM25 and may surface "
+                               "topically-similar but irrelevant dossiers.")
     p_recall.set_defaults(func=cmd_recall)
 
     p_list = sub.add_parser("list", help="compact table of dossiers")

@@ -36,6 +36,10 @@ Mem0 remembers your name. Garm remembers why you failed.
   cosine similarity leading the ranking, for paraphrases that share no
   words at all. Needs `pip install garm[semantic]` plus one
   `garm semantic warmup`; the default stays stdlib-only.
+  Honest status (Oct 2026 field tests): the lane does not reliably
+  outperform BM25 — it matches broad topical similarity and has ranked
+  irrelevant dossiers above relevant ones. Kept as an experimental
+  opt-in; BM25 remains the recommended default.
 - **Confirm** — when a dossier demonstrably helps a later run,
   `garm confirm <id>` records it and confirmed dossiers rank higher.
   `--insight` records the open-ended counterpart: the dossier *generated
