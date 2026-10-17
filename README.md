@@ -1,4 +1,4 @@
-# Garm — v0.2.6
+# Garm — v0.2.10
 
 [![M8ven Score](https://m8ven.ai/badge/mcp/archonlancelot-garm-1o1rhc?v=1c7644f93e4be2c62b05effc3ccd9dd7&variant=verified)](https://m8ven.ai/mcp/archonlancelot-garm-1o1rhc?s=readme)
 
@@ -14,7 +14,7 @@ idea. Failure memory that generates insight.
 
 Mem0 remembers your name. Garm remembers why you failed.
 
-*Current release: v0.2.6. Stdlib-only core; MIT.*
+*Current release: v0.2.10. Stdlib-only core; MIT.*
 
 ## What it does now
 
@@ -125,36 +125,36 @@ staying stdlib-only; meaning-level matching stays out of the default).
 A dossier takes a few minutes to write: the scaffold handles the
 structure, you supply the judgment. (In Claude Code, `/garm:autopsy`
 does it in one command. Prefer an interview to a blank page?
-`python3 -m garm autopsy --dir dossiers` asks the questions and drafts
+`garm autopsy --dir dossiers` asks the questions and drafts
 the dossier from your answers.)
 
 ```bash
 # 0. (Optional) Start from a field-tested bank instead of an empty one
-python3 -m garm import banks/bpsw --dir dossiers   # or banks/earth-moon
+garm import banks/bpsw --dir dossiers   # or banks/earth-moon
 
 # 1. Scaffold a dossier for a failed task (class is required — pick honestly)
-python3 -m garm init --task "Fix flaky checkout test" --agent claude-code \
+garm init --task "Fix flaky checkout test" --agent claude-code \
     --class reasoning-error -o dossiers
 
 # 2. Fill in the sections, then validate it (the filename includes today's date)
-python3 -m garm validate dossiers/*-fix-flaky-checkout-test.md
+garm validate dossiers/*-fix-flaky-checkout-test.md
 
 # 3. Rebuild the index
-python3 -m garm index --dir dossiers
+garm index --dir dossiers
 
 # 4. Retrieve before your next run
-python3 -m garm recall --task "checkout test fails intermittently" --dir dossiers
+garm recall --task "checkout test fails intermittently" --dir dossiers
 
 # 5. When a retrieved dossier demonstrably helps a later run, confirm it
 #    (the index rebuilds automatically)
-python3 -m garm confirm <dossier-id> --dir dossiers
+garm confirm <dossier-id> --dir dossiers
 
 # 6. See everything you have
-python3 -m garm list --dir dossiers
+garm list --dir dossiers
 
 # 7. Close a big route: register what the attempts assumed, kill it when false
-python3 -m garm premise add --statement "The API returns JSON" --dir dossiers
-python3 -m garm premise kill P-20261012-001 --by <dossier-id> --evidence our-tests --dir dossiers
+garm premise add --statement "The API returns JSON" --dir dossiers
+garm premise kill P-20261012-001 --by <dossier-id> --evidence our-tests --dir dossiers
 
 # Run the test suite
 python3 -m unittest discover -s tests -t .

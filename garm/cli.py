@@ -322,12 +322,14 @@ def cmd_recall(args: argparse.Namespace) -> int:
             print(f"  - {entry['id']} | {entry['task']} "
                   f"(premise {shown} dead)")
         if not scored:
+            # v0.2.10: empty result is not an error (was exit 1).
             print("no live dossiers for this task")
-            return 1
+            return 0
         print()
     if not scored:
+        # v0.2.10: empty bank is not an error (was exit 1).
         print(f"no dossiers found in {base}")
-        return 1
+        return 0
     scored.sort(key=lambda s: (-s[0], -(s[5] + s[6]), s[9]["id"]))
     top = max(1, args.top)
     for (total, sig_n, task_n, body_n, sem_n, fix_b, ins_b, overlap, tag,
