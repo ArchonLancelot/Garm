@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "garm"
-version = "0.2.9"
+version = "0.2.10"
 description = "A failure memory for coding agents"
 readme = "README.md"
 license = { text = "MIT" }
@@ -15,6 +15,11 @@ requires-python = ">=3.10"
 # Install with: pip install garm[semantic]
 # The default install stays stdlib-only.
 semantic = ["fastembed>=0.3"]
+
+[project.scripts]
+# v0.2.10: console entry point so `pip install garm` puts `garm` on PATH.
+# (Blind-agent validation 2026-10-16 found bare `garm` missing after install.)
+garm = "garm.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

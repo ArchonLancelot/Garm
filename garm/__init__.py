@@ -5,4 +5,4 @@ tool. This package handles structure, storage, validation, and retrieval.
 Stdlib only.
 """
 
-__version__ = "0.2.9"
+__version__ = "0.2.10"
