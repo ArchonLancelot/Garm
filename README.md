@@ -126,7 +126,9 @@ A dossier takes a few minutes to write: the scaffold handles the
 structure, you supply the judgment. (In Claude Code, `/garm:autopsy`
 does it in one command. Prefer an interview to a blank page?
 `garm autopsy --dir dossiers` asks the questions and drafts
-the dossier from your answers.)
+the dossier from your answers. No TTY — e.g. scripting for an agent?
+`garm autopsy --answers answers.json --dir dossiers` runs the same
+draft non-interactively; see `garm autopsy --help` for the answer keys.)
 
 ```bash
 # 0. (Optional) Start from a field-tested bank instead of an empty one

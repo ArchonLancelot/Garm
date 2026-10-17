@@ -174,15 +174,20 @@ def cmd_confirm(args: argparse.Namespace) -> int:
     open-ended work where there is no verifiable "fix" to count.
     """
     field = "confirmed_insights" if args.insight else "confirmed_fixes"
+    if args.amend and not args.note:
+        print("error: --amend needs --note (nothing to replace it with)",
+              file=sys.stderr)
+        return 1
     try:
         path, new_count = D.confirm_dossier(args.dir, args.id, field=field,
-                                            note=args.note)
+                                            note=args.note, amend=args.amend)
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     label = "confirmed insights" if args.insight else "confirmed fixes"
     note_str = f" note: {args.note.strip()}" if args.note else ""
-    print(f"confirmed: {args.id} ({label}: {new_count}){note_str} [{path}]")
+    verb = "amended note on" if args.amend else "confirmed"
+    print(f"{verb}: {args.id} ({label}: {new_count}){note_str} [{path}]")
     base = Path(args.dir)
     n, skipped = D.rebuild_index(base)
     print(f"indexed {n} dossiers -> {base / 'index.jsonl'}"
@@ -424,7 +429,8 @@ def build_parser() -> argparse.ArgumentParser:
                         choices=D.VALID_FAILURE_CLASSES,
                         help="what kind of failure this was "
                              f"({', '.join(D.VALID_FAILURE_CLASSES)})")
-    p_init.add_argument("-o", "--out-dir", default="dossiers",
+    p_init.add_argument("-o", "--out-dir", "--dir", dest="out_dir",
+                        default="dossiers",
                         help="directory to write into (created if missing)")
     p_init.set_defaults(func=cmd_init)
 
@@ -497,6 +503,11 @@ def build_parser() -> argparse.ArgumentParser:
                                 f"(max {D.CONFIRM_NOTE_MAX_LEN} chars), stored "
                                 "on the dossier so the track record is "
                                 "auditable")
+    p_confirm.add_argument("--amend", action="store_true",
+                           help="replace the note on the most recent confirm "
+                                "without incrementing the counter (v0.2.10: "
+                                "for when you confirmed and then realized the "
+                                "note was missing or wrong)")
     p_confirm.set_defaults(func=cmd_confirm)
 
     p_index = sub.add_parser("index", help="rebuild dossiers/index.jsonl")

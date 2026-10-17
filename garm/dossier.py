@@ -51,7 +51,7 @@ from pathlib import Path
 
 from . import retrieval as RU
 
-SPEC_VERSION = "0.2.6"
+SPEC_VERSION = "0.2.10"
 DOSSIER_VERSION = "0.2"
 ACCEPTED_VERSIONS = ("0.1", "0.2")
 
@@ -563,7 +563,7 @@ _CONFIRMED_RE = re.compile(r'^(confirmed_fixes|confirmed_insights):\s*"?(\d+)"?\
 
 def confirm_dossier(
     base_dir: str | Path, dossier_id: str, field: str = "confirmed_fixes",
-    note: str | None = None,
+    note: str | None = None, amend: bool = False,
 ) -> tuple[Path, int]:
     """Record that a retrieved dossier earned its keep in a later run.
 
@@ -639,12 +639,25 @@ def confirm_dossier(
     if not replaced:
         lines.insert(close_idx, f"{field}: 1\n")
     if clean_note is not None:
-        max_n = 0
-        for i in range(1, close_idx):
-            m = _NOTE_RE.match(lines[i].strip())
-            if m:
-                max_n = max(max_n, int(m.group(1)))
-        lines.insert(close_idx, f'confirm_note_{max_n + 1}: "{clean_note}"\n')
+        if amend:
+            # v0.2.10: replace the most recent note without incrementing.
+            best_i, best_n = -1, 0
+            for i in range(1, close_idx):
+                m = _NOTE_RE.match(lines[i].strip())
+                if m and int(m.group(1)) > best_n:
+                    best_i, best_n = i, int(m.group(1))
+            if best_i < 0:
+                raise ValueError(
+                    f"dossier {dossier_id!r} has no confirm note to amend"
+                )
+            lines[best_i] = f'confirm_note_{best_n}: "{clean_note}"\n'
+        else:
+            max_n = 0
+            for i in range(1, close_idx):
+                m = _NOTE_RE.match(lines[i].strip())
+                if m:
+                    max_n = max(max_n, int(m.group(1)))
+            lines.insert(close_idx, f'confirm_note_{max_n + 1}: "{clean_note}"\n')
     path.write_text("".join(lines), encoding="utf-8")
     errors = validate_dossier(path)
     if errors:
