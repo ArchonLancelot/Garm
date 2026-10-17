@@ -96,14 +96,14 @@ class TestSemanticRanking(unittest.TestCase):
         self.assertAlmostEqual(scores["d3"][0], 0.5, places=9)
         self.assertAlmostEqual(scores["d1"][0], -1.0, places=9)
         # semantic subscore is reported for inspectability
-        self.assertAlmostEqual(scores["d2"][3], 2.9)
+        self.assertAlmostEqual(scores["d2"][4], 2.9)
         # BM25 subscores still reported alongside
         self.assertGreater(scores["d1"][1], scores["d2"][1])
 
     def test_boosts_fold_into_semantic_lane(self):
         entries = self._entries()
         entries[2]["confirmed_fixes"] = 5  # d3: weakest lexically
-        stub = StubBackend({"d1": 0.0, "d2": 0.0, "d3": 0.0})
+        stub = StubBackend({"d1": 0.0, "d2": 0.0, "d3": 0.1})
         scores, ranks = RU.score_corpus(
             ["alpha"], entries, semantic=stub,
             query_text="q", return_ranks=True)
@@ -111,13 +111,13 @@ class TestSemanticRanking(unittest.TestCase):
         order = sorted(scores, key=lambda i: -scores[i][0])
         self.assertEqual(order[0], "d3")
         self.assertEqual(ranks["d3"][1], 1)  # sem_rank
-        self.assertEqual(scores["d3"][4], 5)  # fix boost reported
+        self.assertEqual(scores["d3"][5], 5)  # fix boost reported
 
     def test_default_path_unchanged(self):
         entries = self._entries()
         scores = RU.score_corpus(["alpha"], entries)
         for e in entries:
-            total, ss, ts, sem, fix_b, ins_b = scores[e["id"]]
+            total, ss, ts, bs, sem, fix_b, ins_b = scores[e["id"]]
             self.assertEqual(sem, 0.0)
             self.assertAlmostEqual(total, 2 * ss + ts + fix_b + ins_b)
         # and the default call shape is still just the dict

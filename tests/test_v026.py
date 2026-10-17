@@ -113,7 +113,7 @@ class AliasMatchingTest(unittest.TestCase):
             entry = D.build_index_entry(
                 bank / "dossier-00.md", bank, {"premises": {}})
             scores = RU.score_corpus(["flaky", "checkout"], [entry])
-            total, sig_n, task_n, sem_n, _, _ = scores[entry["id"]]
+            total, sig_n, task_n, body_n, sem_n, _, _ = scores[entry["id"]]
             # flaky~intermittent and checkout, both in the signature:
             # BM25 subscores are positive floats, sig outweighs task here
             self.assertGreater(sig_n, 0)
@@ -146,7 +146,7 @@ class AliasMatchingTest(unittest.TestCase):
             entry = D.build_index_entry(
                 bank / "dossier-00.md", bank, {"premises": {}})
             scores = RU.score_corpus(["primes"], [entry])
-            total, sig_n, _, sem_n, _, _ = scores[entry["id"]]
+            total, sig_n, _, body_n, sem_n, _, _ = scores[entry["id"]]
             self.assertGreater(sig_n, 0)
             self.assertGreater(total, 0)
 
@@ -163,7 +163,7 @@ class AliasMatchingTest(unittest.TestCase):
             # "χ(G)" canonicalizes to chi; chi ~ chromatic via aliases
             scores = RU.score_corpus(
                 D.extract_keywords("χ(G) needs too many colors"), [entry])
-            total, sig_n, _, sem_n, _, _ = scores[entry["id"]]
+            total, sig_n, _, body_n, sem_n, _, _ = scores[entry["id"]]
             self.assertGreater(sig_n, 0, "chi should alias to chromatic")
             self.assertGreater(total, 0)
 
@@ -177,8 +177,8 @@ class AliasMatchingTest(unittest.TestCase):
             entry = D.build_index_entry(
                 bank / "dossier-00.md", bank, {"premises": {}})
             scores = RU.score_corpus(["banana", "xylophone"], [entry])
-            total, sig_n, task_n, sem_n, _, _ = scores[entry["id"]]
-            self.assertEqual((total, sig_n, task_n), (0, 0, 0))
+            total, sig_n, task_n, body_n, sem_n, _, _ = scores[entry["id"]]
+            self.assertEqual((total, sig_n, task_n, body_n), (0, 0, 0, 0))
             self.assertEqual(RU.matched_terms(["banana"], entry), [])
 
     def test_alias_pick_is_deterministic(self):
@@ -205,7 +205,7 @@ class AliasMatchingTest(unittest.TestCase):
             "confirmed_insights": 2,
         }
         scores = RU.score_corpus(["alpha", "beta"], [entry])
-        total, sig_n, task_n, sem_n, fix_b, ins_b = scores["d1"]
+        total, sig_n, task_n, body_n, sem_n, fix_b, ins_b = scores["d1"]
         self.assertEqual((fix_b, ins_b), (5, 2))
         # sig counts double: removing the sig term drops more than removing
         # the task term

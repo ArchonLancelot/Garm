@@ -428,20 +428,25 @@ class RegistryImportExportTest(unittest.TestCase):
                 any(pid == i for i, _ in res3["premises"]["skipped"]))
 
     def test_import_collision_keeps_local(self):
+        # v0.2.10: a collision with a different statement renames the
+        # incoming premise (<pid>--from-<agent>) instead of dropping it.
         with tempfile.TemporaryDirectory() as tmp:
             src = Path(tmp) / "src"
             dest = Path(tmp) / "dest"
             PR.add_premise(src, "foreign claim", created="2026-10-11")
             PR.add_premise(dest, "local claim", created="2026-10-11")
             res = D.import_dossiers(src, dest)
-            self.assertEqual(res["premises"]["added"], [])
-            skipped = dict(res["premises"]["skipped"])
-            self.assertIn("P-20261011-001", skipped)
-            self.assertIn("kept local", skipped["P-20261011-001"])
+            renamed = res["premises"]["renamed"]
+            self.assertIn("P-20261011-001", renamed)
+            new_pid = renamed["P-20261011-001"]
+            self.assertTrue(new_pid.startswith("P-20261011-001--from-"))
+            self.assertIn(new_pid, res["premises"]["added"])
             # local statement untouched
-            self.assertEqual(
-                PR.load_registry(dest)["premises"]["P-20261011-001"]
-                ["statement"], "local claim")
+            reg = PR.load_registry(dest)["premises"]
+            self.assertEqual(reg["P-20261011-001"]["statement"],
+                             "local claim")
+            # renamed premise carries the foreign statement
+            self.assertEqual(reg[new_pid]["statement"], "foreign claim")
 
 
 class PremiseEvidenceTest(unittest.TestCase):
