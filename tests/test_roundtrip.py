@@ -94,7 +94,11 @@ class RoundTripTest(unittest.TestCase):
 
             r = garm("recall", "--task",
                         "checkout test flaky intermittent parallel workers race",
-                        "--dir", "dossiers", "--top", "2", cwd=tmp)
+                        "--dir", "dossiers", "--top", "2",
+                        # v0.2.11: dossier B scores ~0 on this query, so
+                        # the default threshold would hide it; this test
+                        # is about ranking order, not the threshold.
+                        "--min-score", "0", cwd=tmp)
             self.assertEqual(r.returncode, 0, r.stderr)
             lines = [ln for ln in r.stdout.splitlines() if ln.strip()]
             self.assertGreaterEqual(len(lines), 2)

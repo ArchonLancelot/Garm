@@ -349,7 +349,10 @@ class RecallDeadRouteTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             self._bank_with_dead(tmp)
             r = garm("recall", "--task", "partition search", "--dir", "d",
-                     cwd=tmp)
+                     # v0.2.11: the live dossier scores 0.00 on this
+                     # query, so the default threshold would hide it;
+                     # this test is about dead-route exclusion.
+                     "--min-score", "0", cwd=tmp)
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             self.assertIn("dead routes (premise killed), skipped: 1",
                           r.stdout)

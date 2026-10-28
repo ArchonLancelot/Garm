@@ -308,10 +308,13 @@ class AssistedDraftInteractiveTest(unittest.TestCase):
             self.assertEqual(list(bank.glob("*.md")), [])
 
     def test_yes_flag_skips_confirmation(self):
-        # frontmatter pre-answered via flags, so the non-tty guard passes;
-        # only the section questions are scripted. No trailing confirmation
-        # answer: StopIteration would raise if the code asked — proving
-        # --yes skips it.
+        # The test simulates an interactive session (scripted input), so
+        # it also simulates a TTY — v0.2.11's guard refuses non-TTY stdin
+        # at the CLI layer, and this test is about --yes, not the guard
+        # (the guard itself is covered by test_v0211.TtyGuardTest).
+        # Only the section questions are scripted. No trailing
+        # confirmation answer: StopIteration would raise if the code
+        # asked — proving --yes skips it.
         section_script = [
             "Reproduced with --seed 42",      # what_was_tried...
             "Added retry loop",
@@ -328,7 +331,8 @@ class AssistedDraftInteractiveTest(unittest.TestCase):
         ]
         with tempfile.TemporaryDirectory() as tmp:
             bank = Path(tmp) / "dossiers"
-            with mock.patch("builtins.input", side_effect=section_script):
+            with mock.patch("builtins.input", side_effect=section_script), \
+                    mock.patch("sys.stdin.isatty", return_value=True):
                 from garm import cli as CLI
                 import argparse
                 ns = argparse.Namespace(
