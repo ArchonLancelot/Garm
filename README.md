@@ -1,4 +1,4 @@
-# Garm — v0.2.10
+# Garm — v0.2.11
 
 [![M8ven Score](https://m8ven.ai/badge/mcp/archonlancelot-garm-1o1rhc?v=1c7644f93e4be2c62b05effc3ccd9dd7&variant=verified)](https://m8ven.ai/mcp/archonlancelot-garm-1o1rhc?s=readme)
 
@@ -14,7 +14,7 @@ idea. Failure memory that generates insight.
 
 Mem0 remembers your name. Garm remembers why you failed.
 
-*Current release: v0.2.10. Stdlib-only core; MIT.*
+*Current release: v0.2.11. Stdlib-only core; MIT.*
 
 ## What it does now
 
@@ -32,6 +32,10 @@ Mem0 remembers your name. Garm remembers why you failed.
   v0.2.7 added BM25 term weighting: words appearing in every dossier
   barely count, distinctive terms count a lot — generic-word noise no
   longer outranks the relevant dossier. Lexical, honest, dumb.
+  v0.2.11: recall prints nothing below `--min-score` (default 1.0,
+  matching the hook) and appends the top hit's "What retrieval would
+  have changed" section, so the CLI reader gets the actionable part
+  without opening the file.
   v0.2.9 adds an opt-in Tier 2 meaning lane (`--semantic`): embedding
   cosine similarity leading the ranking, for paraphrases that share no
   words at all. Needs `pip install garm[semantic]` plus one
@@ -46,7 +50,9 @@ Mem0 remembers your name. Garm remembers why you failed.
   a new approach*. The bank learns which autopsies earn their keep.
 - **Premises (big routes)** — register the load-bearing claims whole
   families of approaches assume (`garm premise add --statement "..."`).
-  Dossiers declare theirs in `## Premises`; `garm premise kill <id> --by
+  Dossiers declare theirs in `## Premises` — at birth via autopsy, or
+  after the fact with `garm premise attach <id> --dossier <dossier-id>`.
+  `garm premise kill <id> --by
   <dossier> --evidence proof|our-tests|outside-work` closes the big route
   and everything under it transitively. One closed big route closes a
   thousand small routes without running them.
@@ -127,12 +133,16 @@ staying stdlib-only; meaning-level matching stays out of the default).
 ## Quickstart
 
 A dossier takes a few minutes to write: the scaffold handles the
-structure, you supply the judgment. (In Claude Code, `/garm:autopsy`
+structure, you supply the judgment. File one dossier per painful
+failure, not per task — the autopsy tax only pays on failures that
+actually hurt. (In Claude Code, `/garm:autopsy`
 does it in one command. Prefer an interview to a blank page?
 `garm autopsy --dir dossiers` asks the questions and drafts
 the dossier from your answers. No TTY — e.g. scripting for an agent?
 `garm autopsy --answers answers.json --dir dossiers` runs the same
-draft non-interactively; see `garm autopsy --help` for the answer keys.)
+draft non-interactively, printing it for review before saving (no
+confirmation prompt — agents never block); see `garm autopsy --help`
+for the answer keys.)
 
 ```bash
 # 0. (Optional) Start from a field-tested bank instead of an empty one

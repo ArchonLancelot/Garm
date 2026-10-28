@@ -266,14 +266,21 @@ Fields:
 Because it is fully derived, `index.jsonl` can be deleted and rebuilt without
 losing anything. Rebuilding is byte-identical for unchanged input.
 
-## Retrieval ranking (v0.2.7)
+## Retrieval ranking (v0.2.11)
 
 `garm recall` scores each dossier with BM25:
 
 ```
 score = 2 × BM25(query, sig_keywords) + 1 × BM25(query, task_keywords)
+      + 1 × BM25(query, body_keywords)
       + min(confirmed_fixes, 5) + min(confirmed_insights, 5)
 ```
+
+with two gates: confirm boosts apply only when the base lane score
+(2×sig + task + body) is positive — boosts amplify evidence, never
+manufacture it — and the CLI prints nothing on stdout below
+`--min-score` (default 1.0, matching the Claude Code hook's
+`GARM_MIN_SCORE` default): a 0.00 "hit" is noise, not a match.
 
 BM25 weights each query term by inverse document frequency: a term
 appearing in every dossier (like "one") barely counts, while a rare,
@@ -284,10 +291,16 @@ corpus-wide document frequencies.
 
 Signature terms count double because the failure signature is the retrieval
 key — it's the part of the dossier written to be matched on. Task terms
-count single. Each confirmed fix adds a point up to a cap of 5, so dossiers
+count single, and body-section terms (everything except the signature
+and the premises list — root cause, blocking constraint, and the rest)
+count single too, since v0.2.10: a term appearing only in Root cause
+used to be unmatchable. Each confirmed fix adds a point up to a cap of 5, so dossiers
 with a track record rank higher without swamping new ones forever. Ties
 break by confirmed fixes, then dossier id. Scores are floats; the
 `matched:` column still shows exactly which terms (or aliases) matched.
+The top hit's "What retrieval would have changed" section is appended
+to `recall` output, since v0.2.11, so the reader gets the actionable
+part without opening the file.
 
 This is still lexical, not semantic. It finds dossiers that *talk about the
 same things*, weighted toward the matchable parts and toward dossiers that

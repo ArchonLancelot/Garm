@@ -1,7 +1,63 @@
-# QA checklist — Garm v0.2.9 (working)
+# QA checklist — Garm v0.2.11 (working)
 
 Standing rule: nothing ships untested. Run this whole list before any release
 tag or public push. Check each box only after verifying, not before.
+
+## v0.2.11: field-test fix batch (LMArena Agent Mode dogfood, 2026-10-28)
+
+- [x] `garm version` and `garm --version` both print `garm 0.2.11`
+      (version bumped in `garm/__init__.py` and `pyproject.toml`).
+- [x] `recall --min-score` defaults to 1.0, matching the hook's
+      `GARM_MIN_SCORE` default: a 0.00 query prints NOTHING on stdout
+      (short stderr note, exit 0); `--min-score 0` restores the old
+      behavior; strong hits still print the table.
+- [x] At/above threshold, recall appends the top hit's "What retrieval
+      would have changed" section after the table; the hook's table
+      regex ignores those lines (hook suite green).
+- [x] Hook passes `--min-score` explicitly, so a user-set
+      `GARM_MIN_SCORE` below 1.0 still surfaces weak hits (new hook test:
+      0.58-score hit injects at 0.5, stays silent at default 1.0).
+- [x] TTY guard: `--task` + closed stdin refuses (exit 1, clear stderr
+      error, NO file or directory written) — the pre-fix repro wrote a
+      bare scaffold. No-`--task` path still refuses. `--answers` is the
+      non-interactive route.
+- [x] `--answers` prints `--- draft ---` before saving, non-blocking
+      (no confirmation prompt); interactive path still asks.
+- [x] `premise attach <id> --dossier <dossier-id>` edits/creates the
+      dossier's `## Premises` section, re-indexes, is idempotent
+      ("already attached"), and rejects unknown premises/dossiers.
+      `premise kill` reports "declares this premise: N" and "dead
+      routes now: M", and warns on stderr when zero dossiers declare
+      it. Killer exemption honored: a dossier is never a dead route
+      via a premise it killed itself.
+- [x] Interactive autopsy asks for premises (optional, comma-separated)
+      — verified present in `QUESTIONS`; the field test's "never asks"
+      claim was wrong on this point (repro confirmed the question).
+- [x] Confirm-note cap 500 chars: 500 accepted, 501 rejected
+      ("max is 500").
+- [x] Slug truncation breaks at a word boundary within the 50-char cap
+      (field-test "for-a" case now yields the full "for-a"); single
+      long word still hard-cuts at 50.
+- [x] `DOSSIER_SPEC.md` formula matches the implementation
+      (2×sig + task + body + gated boosts, `--min-score` note); recall
+      `--help` keeps "worth 2 points" / "1 point each" / "bm25" /
+      "not semantic" phrasing.
+- [x] Clean-checkout simulation (`python3 -S`, no site-packages):
+      core suite 163 tests, 0 errors, exactly 3 skips (fastembed test
+      + 2 mcp tests); the deliberate-absence guard test still runs.
+- [x] `export` reports dossiers and premises separately ("exported 2
+      dossiers, 1 premises file(s)"); never folds premises.json into
+      the dossier count.
+- [x] `list` task column widened to 80 chars (IDs to 64); a 60-char
+      task prints in full.
+- [x] README: version bumped to v0.2.11, one-line positioning note
+      (one dossier per painful failure, not per task), `--answers`
+      wording clarified (draft printed for review, no blocking prompt).
+- [x] Suites, all green: core 163/163 (skipped=1 on this machine —
+      fastembed absent; mcp present so its tests run), hook 11/11,
+      MCP 14/14. Semantic lane untouched (stays experimental).
+- [x] NOT PUSHED: local tree only; push waits for Armando's explicit
+      word after the green report.
 
 ## v0.2.9: Tier 2 opt-in semantic lane
 
