@@ -15,6 +15,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from . import __version__ as _VERSION
 from . import autopsy as AU
 from . import dossier as D
 from . import premise as PR
@@ -34,9 +35,11 @@ def cmd_autopsy(args: argparse.Namespace) -> int:
     Flags pre-answer the frontmatter questions; --answers runs the whole
     thing non-interactively from a JSON file (keys documented in
     ``garm/autopsy.py``). The draft is printed for review before saving
-    (interactive mode), validated, and indexed when valid. A draft with
-    empty required sections is still written — but it fails validation by
-    design, and the command says exactly which sections need writing.
+    (interactive mode asks to confirm; the --answers path prints it
+    without blocking on a prompt, so agents never hang), validated, and
+    indexed when valid. A draft with empty required sections is still
+    written — but it fails validation by design, and the command says
+    exactly which sections need writing.
     """
     prefill = {
         "task": args.task or "",
@@ -52,12 +55,18 @@ def cmd_autopsy(args: argparse.Namespace) -> int:
             return 1
         # CLI flags override the answers file on conflict.
         raw = {**raw, **{k: v for k, v in prefill.items() if v}}
-        return AU.run_autopsy(raw, args.dir, interactive=False)
-    if not prefill["task"] and not sys.stdin.isatty():
-        # Piped stdin with no --answers and no --task: the interview can't
-        # run, so say so instead of burning through blank prompts.
-        print("error: no --task and stdin is not a terminal; use --answers "
-              "for non-interactive drafting", file=sys.stderr)
+        return AU.run_autopsy(raw, args.dir, interactive=False,
+                              show_draft=True)
+    if not sys.stdin.isatty():
+        # v0.2.11: the interview needs a terminal, whatever is
+        # pre-answered. The old guard only covered the no---task case,
+        # so --task + closed stdin printed every question, saved a bare
+        # scaffold (the save prompt defaults to yes on EOF), and left an
+        # invalid file behind with no warning. Refuse instead, before
+        # anything is written.
+        print("error: stdin is not a terminal; interactive autopsy "
+              "needs a TTY — use --answers for non-interactive "
+              "drafting", file=sys.stderr)
         return 1
     raw = AU.collect_interactive(prefill)
     return AU.run_autopsy(raw, args.dir, interactive=True,
@@ -81,6 +90,64 @@ def cmd_premise_add(args: argparse.Namespace) -> int:
     return 0
 
 
+def _dossiers_declaring(base: Path, premise_ids: set[str]) -> list[str]:
+    """Ids of dossiers whose ## Premises section names any of the given
+    premises. Used to report what a kill actually touches."""
+    declared: list[str] = []
+    for md in sorted(base.rglob("*.md")):
+        try:
+            parsed = D.read_dossier(md)
+        except ValueError:
+            continue
+        refs = PR.parse_premise_refs(
+            parsed["sections"].get("premises", ""))
+        if refs and set(refs) & premise_ids:
+            declared.append(parsed["frontmatter"].get("id", md.name))
+    return declared
+
+
+def _newly_dead_dossiers(base: Path, registry: dict) -> list[str]:
+    """Ids of dossiers that are dead routes under the given registry
+    (mirrors recall's dead-route logic, including the killer exemption).
+    """
+    dead: list[str] = []
+    for md in sorted(base.rglob("*.md")):
+        try:
+            parsed = D.read_dossier(md)
+        except ValueError:
+            continue
+        refs = PR.parse_premise_refs(
+            parsed["sections"].get("premises", ""))
+        if not refs:
+            continue
+        if PR.dossier_dead_premises(
+                registry, refs,
+                dossier_id=parsed["frontmatter"].get("id")):
+            dead.append(parsed["frontmatter"].get("id", md.name))
+    return dead
+
+
+def cmd_premise_attach(args: argparse.Namespace) -> int:
+    """Link a dossier to a premise: add the id to its ## Premises section."""
+    base = Path(args.dir)
+    if not base.is_dir():
+        print(f"error: directory not found: {base}", file=sys.stderr)
+        return 1
+    try:
+        result = PR.attach_premise(base, args.id, args.dossier)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    if result["already"]:
+        print(f"already attached: {args.id} on {args.dossier}")
+        return 0
+    print(f"attached: {args.id} to {args.dossier} [{result['path']}]")
+    n, skipped = D.rebuild_index(base)
+    print(f"indexed {n} dossiers -> {base / 'index.jsonl'}"
+          + (f" ({skipped} invalid skipped)" if skipped else ""))
+    return 0
+
+
 def cmd_premise_kill(args: argparse.Namespace) -> int:
     """Kill a premise: every approach resting on it (transitively) dies."""
     base = Path(args.dir)
@@ -88,6 +155,9 @@ def cmd_premise_kill(args: argparse.Namespace) -> int:
         print(f"error: directory not found: {base}", file=sys.stderr)
         return 1
     try:
+        registry = PR.load_registry(base)
+        killed_set = {args.id} | PR.descendants(registry, args.id)
+        declared = _dossiers_declaring(base, killed_set)
         result = PR.kill_premise(base, args.id, args.by,
                                  evidence=args.evidence)
     except ValueError as exc:
@@ -106,6 +176,23 @@ def cmd_premise_kill(args: argparse.Namespace) -> int:
     n, skipped = D.rebuild_index(base)
     print(f"indexed {n} dossiers -> {base / 'index.jsonl'}"
           + (f" ({skipped} invalid skipped)" if skipped else ""))
+    # v0.2.11: a kill used to report success no matter what it touched.
+    # Say plainly what it touched: dossiers declaring the killed
+    # premise(s), and how many of them are dead routes now.
+    try:
+        new_registry = PR.load_registry(base)
+        dead_now = _newly_dead_dossiers(base, new_registry)
+    except ValueError:
+        dead_now = []
+    print(f"declares this premise: {len(declared)} dossier(s)")
+    for did in declared:
+        print(f"  - {did}")
+    print(f"dead routes now: {len(dead_now)} dossier(s)")
+    if not declared:
+        print(f"warning: no dossier declares {args.id} — this kill "
+              f"affects no dossiers; link dossiers first with "
+              f"`garm premise attach {args.id} --dossier <dossier-id>`",
+              file=sys.stderr)
     return 0
 
 
@@ -152,6 +239,12 @@ def cmd_premise_list(args: argparse.Namespace) -> int:
         stmt = row["statement"]
         stmt = stmt if len(stmt) <= 60 else stmt[:57] + "..."
         print(f"{row['id']:16} {status:7} {deps[:22]:22} {stmt}{killed_by}{ev}{reop}")
+    return 0
+
+
+def cmd_version(args: argparse.Namespace) -> int:
+    """Print the package version."""
+    print(f"garm {_VERSION}")
     return 0
 
 
@@ -262,7 +355,14 @@ def cmd_export(args: argparse.Namespace) -> int:
         return 1
     for name, reason in result["skipped"]:
         print(f"skipped: {name} ({reason})", file=sys.stderr)
-    print(f"exported {len(result['copied'])} dossiers -> {args.out}")
+    # v0.2.11: the registry file is not a dossier — never fold it into
+    # the dossier count (a bank of 2 dossiers + premises.json used to
+    # report "exported 3 dossiers").
+    dossiers = [c for c in result["copied"] if c != "premises.json"]
+    premises = len(result["copied"]) - len(dossiers)
+    plural = "" if len(dossiers) == 1 else "s"
+    print(f"exported {len(dossiers)} dossier{plural}, {premises} "
+          f"premises file(s) -> {args.out}")
     return 0
 
 
@@ -317,28 +417,43 @@ def cmd_recall(args: argparse.Namespace) -> int:
                 tag = " [semantic]"
         scored.append((total, sig_n, task_n, body_n, sem_n, fix_b, ins_b,
                        overlap, tag, entry))
-    if dead:
+    scored.sort(key=lambda s: (-s[0], -(s[5] + s[6]), s[9]["id"]))
+    shown = [s for s in scored if s[0] >= args.min_score]
+    if scored and not shown:
+        # v0.2.11: everything below threshold — stdout stays empty. A
+        # 0.00 "hit" is noise, and the hook already treats silence as
+        # no-match. (Genuine absence — empty bank, everything dead or
+        # class-filtered out — still reports below, since that is not a
+        # below-threshold hit.)
+        print(f"no dossiers at or above --min-score {args.min_score} "
+              f"(best: {scored[0][0]:.2f})", file=sys.stderr)
+        return 0
+
+    def _print_dead_block() -> None:
         print(f"dead routes (premise killed), skipped: {len(dead)}")
         for entry in dead:
             dead_p = PR.dossier_dead_premises(
                 registry, entry.get("premises", []),
                 dossier_id=entry.get("id"))
-            shown = ", ".join(dead_p[:2]) + ("…" if len(dead_p) > 2 else "")
+            shown_p = ", ".join(dead_p[:2]) + ("…" if len(dead_p) > 2 else "")
             print(f"  - {entry['id']} | {entry['task']} "
-                  f"(premise {shown} dead)")
-        if not scored:
+                  f"(premise {shown_p} dead)")
+
+    if not shown:
+        if dead:
+            _print_dead_block()
             # v0.2.10: empty result is not an error (was exit 1).
             print("no live dossiers for this task")
             return 0
-        print()
-    if not scored:
         # v0.2.10: empty bank is not an error (was exit 1).
         print(f"no dossiers found in {base}")
         return 0
-    scored.sort(key=lambda s: (-s[0], -(s[5] + s[6]), s[9]["id"]))
+    if dead:
+        _print_dead_block()
+        print()
     top = max(1, args.top)
     for (total, sig_n, task_n, body_n, sem_n, fix_b, ins_b, overlap, tag,
-         entry) in scored[:top]:
+         entry) in shown[:top]:
         matched = ",".join(overlap) if overlap else "-"
         fixes = entry.get("confirmed_fixes", 0)
         insights = entry.get("confirmed_insights", 0)
@@ -349,6 +464,22 @@ def cmd_recall(args: argparse.Namespace) -> int:
               f"[{entry['path']}] (from:{origin} sig:{sig_n:.2f} task:{task_n:.2f}"
               f" body:{body_n:.2f}{sem_col} "
               f"fix:{fixes} insight:{insights} matched: {matched}){dead_mark}{tag}")
+    # v0.2.11: append the top hit's actionable section — the CLI reader
+    # should not have to open the file and sed it out. The hook ignores
+    # these lines (its table regex doesn't match them).
+    top_entry = shown[0][9]
+    try:
+        top_sections = D.read_dossier(
+            base / top_entry["path"])["sections"]
+        changed = top_sections.get(
+            "what retrieval would have changed", "").strip()
+    except (ValueError, OSError):
+        changed = ""
+    if changed:
+        print()
+        print(f"--- What retrieval would have changed "
+              f"(top hit: {top_entry['id']}) ---")
+        print(changed)
     return 0
 
 
@@ -387,11 +518,14 @@ def cmd_list(args: argparse.Namespace) -> int:
         print(f"no dossiers found in {base}")
         return 0
     rows.sort(key=lambda r: r[0])
-    print(f"{'ID':40} {'ORIGIN':18} {'CLASS':15} {'FIX':4} {'INS':4} "
+    # v0.2.11: the task column was 40 chars, which truncated dossiers
+    # into indistinguishability; ids run to 61 chars (date + 50-char
+    # slug), so both columns get room.
+    print(f"{'ID':64} {'ORIGIN':18} {'CLASS':15} {'FIX':4} {'INS':4} "
           f"{'OUTCOME':9} TASK")
     for dossier_id, origin, failure_class, fixes, insights, outcome, task in rows:
-        task_short = task if len(task) <= 40 else task[:37] + "..."
-        print(f"{dossier_id[:40]:40} {origin[:18]:18} "
+        task_short = task if len(task) <= 80 else task[:77] + "..."
+        print(f"{dossier_id[:64]:64} {origin[:18]:18} "
               f"{failure_class[:15]:15} {fixes:<4} {insights:<4} "
               f"{outcome:9} {task_short}")
     return 0
@@ -407,14 +541,21 @@ def build_parser() -> argparse.ArgumentParser:
             "and retrieval."
         ),
     )
+    parser.add_argument("--version", action="version",
+                        version=f"garm {_VERSION}",
+                        help="print the package version and exit")
     sub = parser.add_subparsers(dest="command", required=True, metavar="command")
+
+    p_version = sub.add_parser("version", help="print the package version")
+    p_version.set_defaults(func=cmd_version)
 
     p_init = sub.add_parser(
         "init",
         help="scaffold a new dossier from the template",
         description=(
             "Scaffold a new dossier from the template. The id is derived "
-            "from the date and task slug (truncated to 50 characters); "
+            "from the date and task slug (capped at 50 characters, "
+            "broken at a word boundary); "
             "`created` is the machine's local date. A scaffold is not a "
             "dossier: fill in every section honestly, then validate — "
             "`validate` rejects sections left as the template's placeholder "
@@ -445,7 +586,9 @@ def build_parser() -> argparse.ArgumentParser:
             "Nothing is invented: unanswered sections keep the scaffold's "
             "guidance, and a draft with empty required sections fails "
             "`validate` by design, naming what still needs writing. The "
-            "draft is printed for review before saving, and indexed when "
+            "draft is printed for review before saving (interactive mode "
+            "asks to confirm; --answers prints it without blocking on a "
+            "prompt, so agents never hang), and indexed when "
             "valid. --answers runs non-interactively from a JSON file; "
             "answer keys: task, agent, failure_class, outcome, "
             "what_was_tried, root_cause, failure_signature, "
@@ -520,9 +663,16 @@ def build_parser() -> argparse.ArgumentParser:
         description=(
             "Rank dossiers by BM25 lexical score: signature-term matches "
             "count DOUBLE (the failure signature is the retrieval "
-            "key), task-term matches single, and each confirmed fix "
-            "or confirmed insight adds 1 point up to a cap of "
-            "5 each. Ties break by total confirms, then "
+            "key), task-term and body-section matches single, and each "
+            "confirmed fix or confirmed insight adds 1 point up to a cap of "
+            "5 each — but only when the base score is positive, so boosts "
+            "amplify evidence instead of manufacturing it. Below "
+            "--min-score (default 1.0, matching the Claude Code hook), "
+            "recall prints nothing on stdout: a 0.00 \"hit\" is noise. "
+            "The top hit's \"What retrieval would have changed\" section "
+            "is appended, so the CLI reader gets the actionable part "
+            "without opening the file. "
+            "Ties break by total confirms, then "
             "dossier id. Before matching, Unicode math "
             "symbols are canonicalized to words (χ → chi, x² → x 2) and "
             "query terms expand through a curated synonym map (flaky ~ "
@@ -542,9 +692,10 @@ def build_parser() -> argparse.ArgumentParser:
             "shown; hits the meaning lane ranked above the BM25 lane are "
             "tagged [semantic], and a sem: subscore column appears. "
             "Output columns per hit: TOTAL | id | task [path] "
-            "(from:origin sig:<n> task:<n> fix:<n> insight:<n> "
+            "(from:origin sig:<n> task:<n> body:<n> fix:<n> insight:<n> "
             "matched: <terms>). sig: counts matched signature terms (each "
             "worth 2 points); task: counts matched task terms (1 point "
+            "each); body: counts matched body-section terms (1 point "
             "each); fix:/insight: show the dossier's confirmed counters "
             "(each adds up to 5 points, already included in TOTAL)."
         ),
@@ -552,6 +703,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_recall.add_argument("--task", required=True, help="describe the current task")
     p_recall.add_argument("--dir", default="dossiers", help="dossier directory")
     p_recall.add_argument("--top", type=int, default=3, help="how many to show (default 3)")
+    p_recall.add_argument("--min-score", type=float, default=1.0,
+                          help="minimum total score to print (default 1.0, "
+                               "matching the Claude Code hook's "
+                               "GARM_MIN_SCORE default). Below threshold, "
+                               "recall prints nothing on stdout — a 0.00 "
+                               "\"hit\" is noise. Use 0 to see everything, "
+                               "as older versions did.")
     p_recall.add_argument("--class", dest="failure_class",
                           choices=D.VALID_FAILURE_CLASSES, default=None,
                           help="only consider dossiers of this failure class")
@@ -617,7 +775,9 @@ def build_parser() -> argparse.ArgumentParser:
             "Close big routes. `garm premise add` registers a "
             "load-bearing claim a family of approaches assumes "
             "(--depends-on names the big routes it rests on). Dossiers "
-            "declare their premises in an optional ## Premises section. "
+            "declare their premises in an optional ## Premises section — "
+            "at birth via `garm autopsy` (it asks, optionally), or after "
+            "the fact via `garm premise attach <id> --dossier <dossier>`. "
             "`garm premise kill <id> --by <dossier>` marks the claim "
             "false: the premise and everything under it dies transitively, "
             "the index is rebuilt, and recall stops suggesting dead "
@@ -655,6 +815,21 @@ def build_parser() -> argparse.ArgumentParser:
                              "out), outside-work (someone else's result)")
     p_kill.add_argument("--dir", default="dossiers", help="dossier directory")
     p_kill.set_defaults(func=cmd_premise_kill)
+
+    p_attach = p_sub.add_parser(
+        "attach", help="link a dossier to a premise",
+        description=(
+            "Retro-link a dossier to a premise: add the premise id to "
+            "the dossier's ## Premises section (creating it if absent) "
+            "and rebuild the index, so a later kill actually touches "
+            "the dossier. Attaching an already-linked premise is a "
+            "no-op that says so."
+        ))
+    p_attach.add_argument("id", help="premise id, e.g. P-20261011-001")
+    p_attach.add_argument("--dossier", required=True,
+                          help="dossier id to link the premise to")
+    p_attach.add_argument("--dir", default="dossiers", help="dossier directory")
+    p_attach.set_defaults(func=cmd_premise_attach)
 
     p_reopen = p_sub.add_parser(
         "reopen", help="reopen a killed premise",
