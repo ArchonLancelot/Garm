@@ -407,12 +407,16 @@ def _check_premise_refs(premises_text: str, base_dir: Path) -> list[str]:
     return warnings
 
 
-def write_draft(task: str, agent: str, outcome: str, failure_class: str,
-                sections: dict[str, str], out_dir: str | Path,
-                created: str | None = None) -> tuple[Path, str]:
-    """Render the draft, strip blank optional sections, and write it with
-    collision-safe naming (same ``<date>-<slug>`` scheme as ``init``).
-    Returns (path, text)."""
+def draft_path_and_text(task: str, agent: str, outcome: str,
+                        failure_class: str, sections: dict[str, str],
+                        out_dir: str | Path,
+                        created: str | None = None) -> tuple[Path, str]:
+    """Render a draft and pick its collision-safe path, without writing.
+
+    v0.2.11: split out of ``write_draft`` so the non-interactive path
+    can print the draft for review *before* saving it (agents must see
+    what will be written, without blocking on a confirmation prompt).
+    """
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     created = created or date.today().isoformat()
@@ -429,17 +433,38 @@ def write_draft(task: str, agent: str, outcome: str, failure_class: str,
     )
     filled = {k.lower() for k in sections}
     text = _strip_unfilled_optionals(text, filled)
+    return path, text
+
+
+def write_draft(task: str, agent: str, outcome: str, failure_class: str,
+                sections: dict[str, str], out_dir: str | Path,
+                created: str | None = None) -> tuple[Path, str]:
+    """Render the draft, strip blank optional sections, and write it with
+    collision-safe naming (same ``<date>-<slug>`` scheme as ``init``).
+    Returns (path, text)."""
+    path, text = draft_path_and_text(
+        task=task, agent=agent, outcome=outcome,
+        failure_class=failure_class, sections=sections,
+        out_dir=out_dir, created=created,
+    )
     path.write_text(text, encoding="utf-8")
     return path, text
 
 
 def run_autopsy(raw_answers: dict, base_dir: str | Path,
                 interactive: bool = False,
-                confirm_save: bool = True) -> int:
+                confirm_save: bool = True,
+                show_draft: bool = False) -> int:
     """Full assisted-draft flow. Returns a process exit code.
 
     0: draft written, valid, indexed. 1: draft written but not yet valid
     (says which sections need writing), or a fatal input problem.
+
+    ``show_draft`` (v0.2.11, non-interactive path only): print the
+    rendered draft for review *before* saving it. Non-blocking — no
+    confirmation prompt, so agents never hang on it. The CLI passes this
+    for ``--answers``; the MCP path leaves it off (its transport is not
+    a terminal, and stdout is protocol).
     """
     if not interactive:
         try:
@@ -460,13 +485,12 @@ def run_autopsy(raw_answers: dict, base_dir: str | Path,
     for warning in _check_premise_refs(premises_text, base):
         print(warning, file=sys.stderr)
 
-    path, text = write_draft(
-        task=task, agent=agent, outcome=frontmatter["outcome"],
-        failure_class=frontmatter["failure_class"], sections=sections,
-        out_dir=base,
-    )
-
     if interactive and confirm_save:
+        path, text = write_draft(
+            task=task, agent=agent, outcome=frontmatter["outcome"],
+            failure_class=frontmatter["failure_class"], sections=sections,
+            out_dir=base,
+        )
         print()
         print("--- draft ---")
         print(text)
@@ -480,6 +504,25 @@ def run_autopsy(raw_answers: dict, base_dir: str | Path,
             print("discarded — nothing written.")
             return 1
     else:
+        if show_draft and not interactive:
+            # Render first, print for review, then save — the draft is
+            # never written unseen on the agent path.
+            path, text = draft_path_and_text(
+                task=task, agent=agent, outcome=frontmatter["outcome"],
+                failure_class=frontmatter["failure_class"],
+                sections=sections, out_dir=base,
+            )
+            print()
+            print("--- draft ---")
+            print(text)
+            print("--- end draft ---")
+            path.write_text(text, encoding="utf-8")
+        else:
+            path, text = write_draft(
+                task=task, agent=agent, outcome=frontmatter["outcome"],
+                failure_class=frontmatter["failure_class"], sections=sections,
+                out_dir=base,
+            )
         print(f"draft: {path}")
 
     errors = D.validate_dossier(path)

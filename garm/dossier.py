@@ -51,13 +51,13 @@ from pathlib import Path
 
 from . import retrieval as RU
 
-SPEC_VERSION = "0.2.10"
+SPEC_VERSION = "0.2.11"
 DOSSIER_VERSION = "0.2"
 ACCEPTED_VERSIONS = ("0.1", "0.2")
 
 # Confirmable counters. confirmed_fixes: the dossier prevented a specific
 # repeat / fixed a verifiable failure. confirmed_insights: the dossier's
-CONFIRM_NOTE_MAX_LEN = 140
+CONFIRM_NOTE_MAX_LEN = 500
 _NOTE_RE = re.compile(r"^confirm_note_(\d+):")
 # analysis generated a new approach (its blocking constraint, inverted,
 # became the next idea) — for open-ended work with no verifiable "fix".
@@ -116,9 +116,23 @@ _STOPWORDS = frozenset(
 
 
 def slugify(text: str, max_len: int = 50) -> str:
-    """Turn free text into a URL/file-safe slug."""
+    """Turn free text into a URL/file-safe slug.
+
+    v0.2.11: the cap breaks at a word boundary instead of cutting
+    mid-word (a single word longer than the cap is still hard-cut, since
+    there is no boundary to break at).
+    """
     slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
-    return slug[:max_len].strip("-") or "dossier"
+    if len(slug) <= max_len:
+        return slug or "dossier"
+    head = slug[:max_len]
+    if head.endswith("-"):
+        # Cut landed exactly on a boundary (the next char is a hyphen).
+        return head.strip("-") or "dossier"
+    if "-" in head:
+        # Back up to the last complete word: no partial words in ids.
+        return head.rsplit("-", 1)[0] or "dossier"
+    return head
 
 
 def extract_keywords(text: str) -> list[str]:
@@ -518,8 +532,8 @@ def init_dossier(
 ) -> Path:
     """Scaffold a new dossier file in ``out_dir``. Returns the file path.
 
-    The id is ``<created>-<task-slug>`` (slug truncated to 50 chars),
-    with ``-2``, ``-3``... appended on filename collision. ``created``
+    The id is ``<created>-<task-slug>`` (slug capped at 50 chars,
+    broken at a word boundary), with ``-2``, ``-3``... appended on filename collision. ``created``
     defaults to the machine's local date. A scaffold is not a dossier:
     fill every section honestly, then validate (placeholder text fails).
     """
@@ -573,7 +587,7 @@ def confirm_dossier(
     approach — for open-ended work with no verifiable "fix").
 
     ``note`` is optional: a one-line description of what the fix was
-    (max 140 chars), stored as ``confirm_note_N`` in the frontmatter so the
+    (max 500 chars), stored as ``confirm_note_N`` in the frontmatter so the
     track record is auditable — a reader can see what each confirm was for,
     not just the count. Notes don't verify the fix; they document the
     claim.
