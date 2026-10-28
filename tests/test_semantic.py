@@ -13,6 +13,7 @@ P2 autopsy top-3 — is a manual QA step, not a unit test: it needs the
 model download and the shipped banks.
 """
 
+import importlib.util
 import sys
 import unittest
 from pathlib import Path
@@ -24,6 +25,14 @@ sys.path.insert(0, str(ROOT))
 from garm import dossier as D  # noqa: E402
 from garm import retrieval as RU  # noqa: E402
 from garm import semantic as SEM  # noqa: E402
+
+# v0.2.11: a clean checkout has neither optional extra, and tests that
+# need the real package must SKIP, not error — a red "FAILED (errors=3)"
+# on first checkout is the wrong first impression for this project.
+# Availability is probed, never imported for real use here (the
+# "fastembed genuinely hidden" guard test still simulates absence).
+FASTEMBED_AVAILABLE = importlib.util.find_spec("fastembed") is not None
+MCP_AVAILABLE = importlib.util.find_spec("mcp") is not None
 
 
 def make_bank(tmp, dossiers):
@@ -217,6 +226,7 @@ class TestGuards(unittest.TestCase):
              mock.patch.object(SEM, "model_is_cached", return_value=True):
             idx.ensure_ready()  # must not raise
 
+    @unittest.skipUnless(FASTEMBED_AVAILABLE, "fastembed not installed")
     def test_model_is_cached_exact_dir(self):
         import tempfile, json
         with tempfile.TemporaryDirectory() as tmp:
@@ -261,6 +271,7 @@ class TestWiring(unittest.TestCase):
         args = cli.build_parser().parse_args(["semantic", "warmup"])
         self.assertEqual(args.func, cli.cmd_semantic_warmup)
 
+    @unittest.skipUnless(MCP_AVAILABLE, "mcp package not installed")
     def test_mcp_recall_semantic_keys(self):
         import tempfile
         from mcp_server import server as S
@@ -282,6 +293,7 @@ class TestWiring(unittest.TestCase):
             self.assertIn("semantic_lane_first", rows[0])
             self.assertAlmostEqual(rows[0]["semantic_score"], 1.5)
 
+    @unittest.skipUnless(MCP_AVAILABLE, "mcp package not installed")
     def test_mcp_recall_semantic_guard_propagates(self):
         import tempfile
         from mcp_server import server as S

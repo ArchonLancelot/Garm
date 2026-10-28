@@ -171,6 +171,33 @@ class HookProtocolTest(unittest.TestCase):
             self.assertEqual(r.returncode, 0)
             self.assertEqual(r.stdout, "")
 
+    def test_low_min_score_passes_through_to_recall(self):
+        # v0.2.11: the hook must pass --min-score explicitly. A single-doc
+        # bank scores ~0.58 on this query — below the CLI's 1.0 default,
+        # above a user-set 0.5. Without pass-through, the 0.5 case would
+        # silently lose the hit to the CLI default.
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp) / "dossiers"
+            d.mkdir()
+            make_dossier(d, "2026-10-08-alpha-gamma",
+                         "Task alpha gamma",
+                         "unrelated signature words",
+                         "Check the thing first.")
+            r = garm("index", "--dir", str(d), cwd=tmp)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            env = {"GARM_DIR": str(d), "GARM_HOME": str(GARM_HOME),
+                   "GARM_MIN_SCORE": "0.5"}
+            r = run_hook(base_payload("alpha gamma", tmp), env)
+            self.assertEqual(r.returncode, 0)
+            envelope = json.loads(r.stdout)
+            ctx = envelope["hookSpecificOutput"]["additionalContext"]
+            self.assertIn("2026-10-08-alpha-gamma", ctx)
+            # And the default (1.0) genuinely clips this hit.
+            env = {"GARM_DIR": str(d), "GARM_HOME": str(GARM_HOME)}
+            r = run_hook(base_payload("alpha gamma", tmp), env)
+            self.assertEqual(r.returncode, 0)
+            self.assertEqual(r.stdout, "")
+
     def test_brackets_in_task_do_not_misparse_path(self):
         with tempfile.TemporaryDirectory() as tmp:
             d = Path(tmp) / "dossiers"
