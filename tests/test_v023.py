@@ -160,7 +160,9 @@ class HelpDocsTest(unittest.TestCase):
         r = garm("init", "--help", cwd=ROOT)
         self.assertEqual(r.returncode, 0)
         text = " ".join(r.stdout.lower().split())
-        self.assertIn("truncated to 50 characters", text)
+        # v0.2.11: the cap is now word-boundary-aware, not a mid-word cut.
+        self.assertIn("capped at 50 characters, broken at a word boundary",
+                      text)
         self.assertIn("not a dossier", text)
 
 

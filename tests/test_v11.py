@@ -78,7 +78,11 @@ class OriginTest(unittest.TestCase):
             r = garm("index", "--dir", "dossiers", cwd=tmp)
             self.assertEqual(r.returncode, 0, r.stderr)
             r = garm("recall", "--task", "deploy widgets",
-                     "--dir", "dossiers", "--top", "1", cwd=tmp)
+                     "--dir", "dossiers", "--top", "1",
+                     # v0.2.11: single-doc corpus scores below the 1.0
+                     # default threshold; this test is about origin
+                     # display, not the threshold.
+                     "--min-score", "0", cwd=tmp)
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertIn("from:claude-code", r.stdout)
 
@@ -192,7 +196,11 @@ class ExportTest(unittest.TestCase):
             r = garm("import", out, "--dir", str(fresh), cwd=tmp)
             self.assertEqual(r.returncode, 0, r.stderr)
             r = garm("recall", "--task", "roundtrip task",
-                     "--dir", str(fresh), "--top", "1", cwd=tmp)
+                     "--dir", str(fresh), "--top", "1",
+                     # v0.2.11: single-doc corpus scores below the 1.0
+                     # default threshold; this test is about the
+                     # export/import roundtrip, not the threshold.
+                     "--min-score", "0", cwd=tmp)
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertIn("from:dave", r.stdout)
 

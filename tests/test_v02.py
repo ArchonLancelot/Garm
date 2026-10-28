@@ -188,12 +188,12 @@ class ConfirmTest(unittest.TestCase):
                      "--dir", "dossiers", cwd=tmp)
             self.assertEqual(r.returncode, 1)
             self.assertIn("must not be empty", r.stderr)
-            r = garm("confirm", did, "--note", "x" * 141,
+            r = garm("confirm", did, "--note", "x" * 501,
                      "--dir", "dossiers", cwd=tmp)
             self.assertEqual(r.returncode, 1)
-            self.assertIn("max is 140", r.stderr)
-            # exactly 140 is fine
-            r = garm("confirm", did, "--note", "x" * 140,
+            self.assertIn("max is 500", r.stderr)
+            # exactly 500 is fine
+            r = garm("confirm", did, "--note", "x" * 500,
                      "--dir", "dossiers", cwd=tmp)
             self.assertEqual(r.returncode, 0, r.stderr)
             # no note -> no note keys, counter still bumps
@@ -293,11 +293,19 @@ class RecallV02Test(unittest.TestCase):
             make_dossier(tmp, "a.md", "Task alpha gamma", failure_class="knowledge-gap")
             make_dossier(tmp, "b.md", "Task alpha gamma delta", failure_class="reasoning-error")
             r = garm("recall", "--task", "alpha gamma", "--class", "knowledge-gap",
-                        "--dir", "dossiers", "--top", "5", cwd=tmp)
+                        "--dir", "dossiers", "--top", "5",
+                        # v0.2.11: single-doc corpus scores below the 1.0
+                        # default threshold; this test is about class
+                        # filtering, not the threshold.
+                        "--min-score", "0", cwd=tmp)
             self.assertEqual(r.returncode, 0, r.stderr)
-            lines = [ln for ln in r.stdout.splitlines() if ln.strip()]
-            self.assertEqual(len(lines), 1)
-            self.assertIn(dossier_id(Path(tmp) / "dossiers" / "a.md"), lines[0])
+            # Table rows start with the numeric score (after indent);
+            # v0.2.11 appends the top hit's actionable section after the
+            # table, so count rows, not raw lines.
+            rows = [ln for ln in r.stdout.splitlines()
+                    if ln.strip() and ln.strip()[0].isdigit()]
+            self.assertEqual(len(rows), 1)
+            self.assertIn(dossier_id(Path(tmp) / "dossiers" / "a.md"), rows[0])
 
 
 class IndexV02Test(unittest.TestCase):
