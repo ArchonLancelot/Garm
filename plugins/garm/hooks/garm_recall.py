@@ -133,6 +133,11 @@ def main() -> int:
         "--task", prompt[:PROMPT_QUERY_CHARS],
         "--dir", dossier_dir,
         "--top", str(top),
+        # v0.2.11: recall defaults --min-score to 1.0, the same as the
+        # hook default — but an explicit GARM_MIN_SCORE must win over
+        # the CLI default in both directions (a user-set 0.5 must still
+        # surface 0.5–1.0 hits), so always pass it through.
+        "--min-score", str(min_score),
     ]
     if semantic:
         argv.append("--semantic")

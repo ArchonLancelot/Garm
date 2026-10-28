@@ -321,6 +321,103 @@ def reopen_premise(
     return {"reopened": sorted(reopened), "already_open": False}
 
 
+def attach_premise(base_dir: str | Path, premise_id: str,
+                   dossier_id: str) -> dict:
+    """Link a dossier to a premise (v0.2.11).
+
+    Adds ``premise_id`` to the dossier's ``## Premises`` section,
+    creating the section if the dossier has none (inserted before
+    ``## Tokens`` or, failing that, ``## Confidence``). This is the
+    retro-linking step the registry was missing: premises used to be
+    declarable only by hand-editing dossier markdown, so kills reported
+    success while no dossier was actually linked.
+
+    Returns ``{"attached": bool, "already": bool, "path": str}``.
+    ``already`` means the dossier already declared the premise — no
+    rewrite happens. Raises ValueError if the premise is unknown, the
+    dossier is not in the bank (or matches more than one file), or the
+    file fails validation after the edit.
+    """
+    from .dossier import read_dossier, validate_dossier
+
+    data = load_registry(base_dir)
+    if premise_id not in data.get("premises", {}):
+        raise ValueError(f"unknown premise {premise_id!r}")
+    base = Path(base_dir)
+    matches: list[Path] = []
+    for md in sorted(base.rglob("*.md")):
+        try:
+            fm = read_dossier(md)["frontmatter"]
+        except ValueError:
+            continue
+        if fm.get("id") == dossier_id:
+            matches.append(md)
+    if not matches:
+        raise ValueError(f"no dossier with id {dossier_id!r} in {base}")
+    if len(matches) > 1:
+        raise ValueError(
+            f"multiple dossiers with id {dossier_id!r}: "
+            + ", ".join(str(m) for m in matches)
+        )
+    target = matches[0]
+    text = target.read_text(encoding="utf-8")
+    lines = text.split("\n")
+    # Sections live after the frontmatter block (second "---" line).
+    fm_end = None
+    for i in range(1, len(lines)):
+        if lines[i].strip() == "---":
+            fm_end = i
+            break
+    if fm_end is None:
+        raise ValueError(f"dossier {target} has malformed frontmatter")
+    header_re = re.compile(r"^##\s+(.*)$")
+
+    def _title(idx: int) -> str:
+        m = header_re.match(lines[idx])
+        return m.group(1).strip().lower() if m else ""
+
+    prem_idx = None
+    for i in range(fm_end + 1, len(lines)):
+        if _title(i) == "premises":
+            prem_idx = i
+            break
+    if prem_idx is not None:
+        end = len(lines)
+        for j in range(prem_idx + 1, len(lines)):
+            if header_re.match(lines[j]):
+                end = j
+                break
+        refs = parse_premise_refs("\n".join(lines[prem_idx + 1:end]))
+        if premise_id in refs:
+            return {"attached": False, "already": True,
+                    "path": str(target)}
+        lines[end:end] = [f"- {premise_id}"]
+    else:
+        anchor = None
+        for want in ("tokens", "confidence"):
+            for i in range(fm_end + 1, len(lines)):
+                if _title(i) == want:
+                    anchor = i
+                    break
+            if anchor is not None:
+                break
+        block = ["## Premises", f"- {premise_id}", ""]
+        if anchor is None:
+            if lines and lines[-1].strip():
+                lines.append("")
+            lines.extend(block)
+        else:
+            sep = [] if lines[anchor - 1].strip() == "" else [""]
+            lines[anchor:anchor] = sep + block
+    target.write_text("\n".join(lines), encoding="utf-8")
+    errors = validate_dossier(target)
+    if errors:
+        raise ValueError(
+            f"dossier {target} failed validation after attach: {errors}"
+        )
+    return {"attached": True, "already": False, "path": str(target)}
+
+
 def list_premises(base_dir: str | Path) -> list[dict]:
     """All premises as dicts with computed ``dead`` flag, sorted by id."""
     data = load_registry(base_dir)
