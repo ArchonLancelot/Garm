@@ -126,9 +126,10 @@ class TestSemanticRanking(unittest.TestCase):
         entries = self._entries()
         scores = RU.score_corpus(["alpha"], entries)
         for e in entries:
-            total, ss, ts, bs, sem, fix_b, ins_b = scores[e["id"]]
+            total, ss, ts, bs, sem, fix_b, ins_b, concept_b = scores[e["id"]]
             self.assertEqual(sem, 0.0)
-            self.assertAlmostEqual(total, 2 * ss + ts + fix_b + ins_b)
+            self.assertAlmostEqual(
+                total, 2 * ss + ts + bs + concept_b + fix_b + ins_b)
         # and the default call shape is still just the dict
         self.assertIsInstance(scores, dict)
 

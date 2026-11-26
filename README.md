@@ -1,4 +1,4 @@
-# Garm — v0.2.11
+# Garm — v0.2.12
 
 [![M8ven Score](https://m8ven.ai/badge/mcp/archonlancelot-garm-1o1rhc?v=1c7644f93e4be2c62b05effc3ccd9dd7&variant=verified)](https://m8ven.ai/mcp/archonlancelot-garm-1o1rhc?s=readme)
 
@@ -14,7 +14,7 @@ idea. Failure memory that generates insight.
 
 Mem0 remembers your name. Garm remembers why you failed.
 
-*Current release: v0.2.11. Stdlib-only core; MIT.*
+*Current release: v0.2.12. Stdlib-only core; MIT.*
 
 ## What it does now
 
@@ -32,10 +32,22 @@ Mem0 remembers your name. Garm remembers why you failed.
   v0.2.7 added BM25 term weighting: words appearing in every dossier
   barely count, distinctive terms count a lot — generic-word noise no
   longer outranks the relevant dossier. Lexical, honest, dumb.
-  v0.2.11: recall prints nothing below `--min-score` (default 1.0,
-  matching the hook) and appends the top hit's "What retrieval would
-  have changed" section, so the CLI reader gets the actionable part
+  v0.2.11: recall appends the top hit's "What retrieval would have
+  changed" section, so the CLI reader gets the actionable part
   without opening the file.
+  v0.2.12: every recall prints a verdict line first — COVERED (the top
+  hit matches a signature term and clearly beats the runner-up), THIN
+  (served, but flagged weak), or UNCOVERED (nothing clears
+  `--min-score`; the query terms are logged to coverage-log.jsonl as
+  the filing backlog, opt out with `--no-coverage-log`). The hook
+  injects an explicit "checked, nothing relevant" line instead of
+  silence, so the agent can tell "checked" from "never checked".
+  Also v0.2.12: a concept bonus (+3.00) when two query terms sit
+  adjacently in a dossier's signature name — the query naming the
+  concept, not just sharing its words — shown as `concept:<a>+<b>`
+  on the hit. It moved the BPSW "Lucas test first" probe THIN ->
+  COVERED without changing any other probe or any off-topic verdict
+  (measured on `tests/probe_calibration.py`).
   v0.2.9 adds an opt-in Tier 2 meaning lane (`--semantic`): embedding
   cosine similarity leading the ranking, for paraphrases that share no
   words at all. Needs `pip install garm[semantic]` plus one
@@ -44,6 +56,13 @@ Mem0 remembers your name. Garm remembers why you failed.
   outperform BM25 — it matches broad topical similarity and has ranked
   irrelevant dossiers above relevant ones. Kept as an experimental
   opt-in; BM25 remains the recommended default.
+- **Coverage** — `garm coverage` shows the bank-level view: per-failure-
+  class counts including the zeros, signature-term clusters with how
+  many dossiers back each term, thin spots (classes with 0–1 dossiers,
+  signature terms appearing in exactly one dossier), and a ranked
+  "file next" list drawn from the uncovered-query log — the bank
+  telling you where to put the next autopsy. Read-only except
+  `--clear`; it never files anything itself.
 - **Confirm** — when a dossier demonstrably helps a later run,
   `garm confirm <id>` records it and confirmed dossiers rank higher.
   `--insight` records the open-ended counterpart: the dossier *generated

@@ -233,7 +233,10 @@ class ConfirmTest(unittest.TestCase):
             r = garm("recall", "--task", "widgets deploy",
                         "--dir", "dossiers", "--top", "2", cwd=tmp)
             self.assertEqual(r.returncode, 0, r.stderr)
-            lines = [ln for ln in r.stdout.splitlines() if ln.strip()]
+            # v0.2.12: the verdict line leads recall stdout — exclude it
+            # so lines[0] is still the first hit row.
+            lines = [ln for ln in r.stdout.splitlines()
+                     if ln.strip() and not ln.startswith("verdict:")]
             self.assertIn(dossier_id(a), lines[0])
             self.assertIn("insight:1", lines[0])
 
@@ -267,7 +270,10 @@ class RecallV02Test(unittest.TestCase):
             r = garm("recall", "--task", "checkout flaky race parallel workers",
                         "--dir", "dossiers", "--top", "2", cwd=tmp)
             self.assertEqual(r.returncode, 0, r.stderr)
-            lines = [ln for ln in r.stdout.splitlines() if ln.strip()]
+            # v0.2.12: the verdict line leads recall stdout — exclude it
+            # so lines[0] is still the first hit row.
+            lines = [ln for ln in r.stdout.splitlines()
+                     if ln.strip() and not ln.startswith("verdict:")]
             self.assertIn(dossier_id(Path(tmp) / "dossiers" / "a.md"), lines[0])
             # BM25: all five query terms hit a's signature, none hit b's —
             # a's sig subscore is a positive float, b's is zero
@@ -284,7 +290,10 @@ class RecallV02Test(unittest.TestCase):
             r = garm("recall", "--task", "widgets deploy",
                         "--dir", "dossiers", "--top", "2", cwd=tmp)
             self.assertEqual(r.returncode, 0, r.stderr)
-            lines = [ln for ln in r.stdout.splitlines() if ln.strip()]
+            # v0.2.12: the verdict line leads recall stdout — exclude it
+            # so lines[0] is still the first hit row.
+            lines = [ln for ln in r.stdout.splitlines()
+                     if ln.strip() and not ln.startswith("verdict:")]
             self.assertIn(dossier_id(a), lines[0])
             self.assertIn("fix:1", lines[0])
 

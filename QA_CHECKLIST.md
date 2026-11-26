@@ -1,7 +1,123 @@
-# QA checklist — Garm v0.2.11 (working)
+# QA checklist — Garm v0.2.12 (working)
 
 Standing rule: nothing ships untested. Run this whole list before any release
 tag or public push. Check each box only after verifying, not before.
+
+## v0.2.12: coverage-gap batch (2026-11-10)
+
+- [x] Verdict thresholds calibrated by measuring, not guessed: on the
+      three shipped banks (bpsw/earth-moon/imo), 29 in-bank queries
+      (top 15.34–44.54, margins 4.50–32.11, sig match 28/29) vs 27
+      off-topic/generic queries (12 cleared 1.0, top up to 13.62,
+      margins 0.05–4.74, sig match often 1 via aliases). Margin 5.0
+      gives zero false COVERED on the measured set; cost is 4/29
+      genuine queries flagged THIN (still served).
+- [x] `garm recall` prints a verdict line first on stdout in all cases
+      with live entries: COVERED (sig match + margin ≥ 5.0), THIN
+      (served but flagged weak), UNCOVERED (nothing clears
+      `--min-score`; names best score and closest miss). Empty bank
+      still prints "no dossiers found" with no verdict (absence, not
+      a verdict). Ranking order unchanged (roundtrip + v0.2 tests
+      green after shifting their line indices past the verdict line).
+- [x] UNCOVERED recall appends one terms-only line to
+      `coverage-log.jsonl` (ts, terms, best, closest, matched — never
+      the full prompt); `--no-coverage-log` and
+      `GARM_NO_COVERAGE_LOG=1` both suppress it; COVERED/THIN never
+      log; recall never fails when the log can't be written.
+- [x] `garm coverage`: per-class counts include the zeros; signature-
+      term clusters drop boilerplate (terms in >75% of dossiers) and
+      numeric fragments (<2 letters); thin spots list 0–1-dossier
+      classes and singleton terms (capped at 10, "+N more"); "file
+      next" ranks thin spots by log rhymes (same-term or alias) and
+      lists zero-dossier classes separately; `--clear` empties the log
+      and reports the count; empty bank and missing dir handled.
+- [x] Hook injects "Garm checked its failure memory for this task and
+      found nothing relevant (best match scored X). No past failure
+      applies — proceed without it." on UNCOVERED instead of silence;
+      hits still inject as before; no verdict line (old recall, empty
+      bank) stays silent; recall failure stays silent.
+- [x] `garm version` / `garm --version` both print `garm 0.2.12`
+      (version bumped in `garm/__init__.py` and `pyproject.toml`).
+- [x] README: version bumped to v0.2.12, recall bullet rewritten for
+      the verdict, new Coverage bullet; `DOSSIER_SPEC.md` retrieval
+      section gains the v0.2.12 verdict subsection with the
+      calibration numbers; recall `--help` updated (verdict + log).
+- [x] Suites, all green: core 180/180 (skipped=1 on this machine —
+      fastembed absent; 17 new v0.2.12 tests), hook 11/11, MCP 14/14.
+      Clean-checkout simulation (`python3 -S`, no site-packages):
+      core 180 tests, 0 errors, exactly 3 skips (fastembed test + 2
+      mcp tests). Semantic lane untouched (stays experimental).
+- [x] NOT PUSHED: local tree only; push waits for Armando's explicit
+      word after the green report.
+
+## v0.2.12 addendum: signature-weight trial, measured and REJECTED (2026-11-25)
+
+- [x] Trial: signature weight 2x -> 3x in `garm/retrieval.py`
+      (`SIGNATURE_WEIGHT`, also the semantic lane's shape) to sharpen
+      the BPSW "Lucas test first" probe, which sat THIN at margin 2.43
+      because a "skip the Lucas test" dossier scores 6.11 on generic
+      task words against the right dossier's 5.83 signature lead.
+      Measured on the live 17-dossier BPSW bank: Lucas went THIN ->
+      COVERED (13.82/2.43 -> 19.65/6.98) and factoring THIN -> COVERED
+      (10.27/3.96 -> 12.83/6.21) — but the trial FAILED calibration:
+      false COVERED on off-topic "chromatic number of a graph"
+      (11.01/7.45, single generic term "number") and "random prime
+      pairs" regressed COVERED -> THIN (13.58/5.09 -> 14.76/3.29; its
+      evidence lives in the body, not the signature). Every field-weight
+      tweak helps one probe and hurts another: the four probes' evidence
+      lives in different fields, so 2x/1x/1x is already near the balance
+      point. Trial REVERTED; the 2x weight is now a named constant
+      (`SIGNATURE_WEIGHT = 2`) with the rejection recorded in its
+      comment. The Lucas THIN is the calibrated system working as
+      designed (right answer, honestly weak evidence), not a defect.
+- [x] New regression harness `tests/probe_calibration.py` (standalone,
+      not a pytest test): 4 genuine BPSW probes (top must be the right
+      dossier) + 6 off-topic queries (must never verdict COVERED).
+      Passes on both banks after the trial revert: shipped `banks/bpsw`
+      (12 dossiers) ALL PASS, live 17-dossier BPSW bank ALL PASS
+      (baseline numbers reproduced exactly: tests 177 passed, 3 skipped).
+      Run it before and after any retrieval change.
+- [x] The harness caught a real staleness bug on first run: the shipped
+      `banks/bpsw` lucas-first dossier still had its October signature
+      ("mirror-image-also-one-sided"), while the live bank got the Nov 22
+      signature fix ("lucas-first-rank-construction-also-one-sided",
+      `confirmed_insights: 1`). Synced the shipped copy from the live
+      bank (byte-identical after copy); harness then passes on both
+      banks. The Nov 10 calibration numbers stand: the sync changes one
+      dossier's signature text, and the harness's two properties hold on
+      the shipped bank after it.
+
+## v0.2.12 addendum: concept bonus, measured and KEPT (2026-11-25)
+
+- [x] Concept bonus (`CONCEPT_BONUS = 3.0`, `concept_match` in
+      `garm/retrieval.py`): flat +3.00 on the BM25 total when two
+      distinct query terms sit adjacently in a dossier's signature NAME
+      (the curated concept label), aliases count, shown as
+      `concept:<a>+<b>` on the hit. Only the slug (before the first
+      period) is examined — never the prose, where a "skip Lucas test"
+      sentence would reward the wrong dossier. Not folded into the
+      semantic lane's cosine-scale totals. Score tuple extended to 8
+      elements (concept bonus last); CLI, MCP server, and all tests
+      updated; hook regex unaffected (it only reads through `sig:`).
+- [x] Measured on `tests/probe_calibration.py` (both banks, ALL PASS):
+      live 17-dossier bank — Lucas THIN 13.82/2.43 -> COVERED
+      16.82/5.43 (`concept:lucas+first`); factoring, squarefree,
+      random-pairs, and all 6 off-topic verdicts UNCHANGED (0 false
+      COVERED). Shipped 12-dossier bank — Lucas THIN 14.07/4.68 ->
+      COVERED 17.07/7.68; everything else unchanged. The bonus fires
+      on no other harness query. 6 new unit tests in
+      `tests/test_v026.py` (bigram, single-term, non-adjacent,
+      prose-exclusion, alias, no-signature).
+- [x] Suites, all green after the change: core 183 passed, 3 skipped
+      (177 + 6 new concept tests; fastembed absent so semantic tests
+      run on stubs), hook 11/11, MCP 14/14 (mcp package installed in
+      the test venv to run them). README Recall bullet documents the
+      bonus; harness docstring records the before/after numbers.
+      The 3.0 constant is calibrated on the 10-query harness, not the
+      56-query Nov 10 set (not stored as a fixture) — re-measure on a
+      wider set before treating it as settled.
+- [x] NOT PUSHED: local tree only; push waits for Armando's explicit
+      word after the green report.
 
 ## v0.2.11: field-test fix batch (LMArena Agent Mode dogfood, 2026-10-28)
 

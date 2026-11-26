@@ -26,7 +26,7 @@ class RecallHelpTest(unittest.TestCase):
         )
         self.assertEqual(r.returncode, 0)
         for cmd in ("init", "validate", "confirm", "index", "recall",
-                    "list", "import", "export"):
+                    "list", "import", "export", "coverage"):
             self.assertIn(cmd, r.stdout)
 
 

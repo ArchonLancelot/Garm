@@ -113,7 +113,8 @@ class AliasMatchingTest(unittest.TestCase):
             entry = D.build_index_entry(
                 bank / "dossier-00.md", bank, {"premises": {}})
             scores = RU.score_corpus(["flaky", "checkout"], [entry])
-            total, sig_n, task_n, body_n, sem_n, _, _ = scores[entry["id"]]
+            total, sig_n, task_n, body_n, sem_n, _, _, _ = (
+                scores[entry["id"]])
             # flaky~intermittent and checkout, both in the signature:
             # BM25 subscores are positive floats, sig outweighs task here
             self.assertGreater(sig_n, 0)
@@ -146,7 +147,7 @@ class AliasMatchingTest(unittest.TestCase):
             entry = D.build_index_entry(
                 bank / "dossier-00.md", bank, {"premises": {}})
             scores = RU.score_corpus(["primes"], [entry])
-            total, sig_n, _, body_n, sem_n, _, _ = scores[entry["id"]]
+            total, sig_n, _, body_n, sem_n, _, _, _ = scores[entry["id"]]
             self.assertGreater(sig_n, 0)
             self.assertGreater(total, 0)
 
@@ -163,7 +164,7 @@ class AliasMatchingTest(unittest.TestCase):
             # "χ(G)" canonicalizes to chi; chi ~ chromatic via aliases
             scores = RU.score_corpus(
                 D.extract_keywords("χ(G) needs too many colors"), [entry])
-            total, sig_n, _, body_n, sem_n, _, _ = scores[entry["id"]]
+            total, sig_n, _, body_n, sem_n, _, _, _ = scores[entry["id"]]
             self.assertGreater(sig_n, 0, "chi should alias to chromatic")
             self.assertGreater(total, 0)
 
@@ -177,7 +178,8 @@ class AliasMatchingTest(unittest.TestCase):
             entry = D.build_index_entry(
                 bank / "dossier-00.md", bank, {"premises": {}})
             scores = RU.score_corpus(["banana", "xylophone"], [entry])
-            total, sig_n, task_n, body_n, sem_n, _, _ = scores[entry["id"]]
+            total, sig_n, task_n, body_n, sem_n, _, _, _ = (
+                scores[entry["id"]])
             self.assertEqual((total, sig_n, task_n, body_n), (0, 0, 0, 0))
             self.assertEqual(RU.matched_terms(["banana"], entry), [])
 
@@ -205,14 +207,88 @@ class AliasMatchingTest(unittest.TestCase):
             "confirmed_insights": 2,
         }
         scores = RU.score_corpus(["alpha", "beta"], [entry])
-        total, sig_n, task_n, body_n, sem_n, fix_b, ins_b = scores["d1"]
+        total, sig_n, task_n, body_n, sem_n, fix_b, ins_b, concept_b = (
+            scores["d1"])
         self.assertEqual((fix_b, ins_b), (5, 2))
+        self.assertEqual(concept_b, 0.0)  # no signature name, no concept
         # sig counts double: removing the sig term drops more than removing
         # the task term
         no_sig = RU.score_corpus(["beta"], [entry])["d1"][0]
         no_task = RU.score_corpus(["alpha"], [entry])["d1"][0]
         self.assertGreater(no_task, no_sig)
-        self.assertAlmostEqual(total, 2 * sig_n + task_n + 5 + 2)
+        self.assertAlmostEqual(
+            total, 2 * sig_n + task_n + body_n + concept_b + 5 + 2)
+
+    def test_concept_bonus_name_bigram(self):
+        # Two query terms adjacent in the signature NAME earn the flat
+        # concept bonus; the label names the pair.
+        entry = {
+            "id": "d1",
+            "keywords": ["lucas", "first", "rank"],
+            "sig_keywords": ["lucas", "first", "rank"],
+            "signature": "Name: lucas-first-rank-construction.",
+        }
+        bonus, label = RU.concept_match(["lucas", "test", "first"], entry)
+        self.assertEqual((bonus, label), (RU.CONCEPT_BONUS, "lucas+first"))
+        scores = RU.score_corpus(["lucas", "test", "first"], [entry])
+        total, _s, _t, _b, _sem, _f, _i, cb = scores["d1"]
+        self.assertEqual(cb, RU.CONCEPT_BONUS)
+        self.assertAlmostEqual(total, 2 * _s + _t + _b + cb + _f + _i)
+
+    def test_concept_bonus_needs_two_terms(self):
+        # One query term in the name is not a concept.
+        entry = {
+            "id": "d1",
+            "keywords": ["lucas", "rank"],
+            "sig_keywords": ["lucas", "rank"],
+            "signature": "Name: lucas-solved-fermat-empty.",
+        }
+        self.assertEqual(RU.concept_match(["lucas", "test", "first"], entry),
+                         (0.0, ""))
+
+    def test_concept_bonus_needs_adjacency(self):
+        # Both terms in the name but not adjacent: no concept.
+        entry = {
+            "id": "d1",
+            "keywords": ["lucas", "first", "rank"],
+            "sig_keywords": ["lucas", "first", "rank"],
+            "signature": "Name: lucas-rank-first-construction.",
+        }
+        self.assertEqual(RU.concept_match(["lucas", "test", "first"], entry),
+                         (0.0, ""))
+
+    def test_concept_bonus_ignores_prose(self):
+        # The pair sits in the prose after the name, not in the name:
+        # a "skip Lucas test" sentence must not reward the wrong
+        # dossier. Only the slug (before the first period) counts.
+        entry = {
+            "id": "d1",
+            "keywords": ["lucas", "test"],
+            "sig_keywords": ["lucas", "test"],
+            "signature": "Name: unvalidated-theorem-as-filter. "
+                         "If you skip the Lucas test, stop.",
+        }
+        self.assertEqual(RU.concept_match(["lucas", "test", "first"], entry),
+                         (0.0, ""))
+
+    def test_concept_bonus_alias_aware(self):
+        # Query "primes" matches the name token "prime" through aliases.
+        entry = {
+            "id": "d1",
+            "keywords": ["prime", "sieve"],
+            "sig_keywords": ["prime", "sieve"],
+            "signature": "Name: prime-sieve-misses.",
+        }
+        bonus, label = RU.concept_match(["primes", "sieve"], entry)
+        self.assertEqual(bonus, RU.CONCEPT_BONUS)
+        self.assertEqual(label, "prime+sieve")
+
+    def test_concept_bonus_no_signature(self):
+        # Synthetic entries without a signature line get no bonus.
+        entry = {"id": "d1", "keywords": ["lucas", "first"],
+                 "sig_keywords": ["lucas", "first"]}
+        self.assertEqual(RU.concept_match(["lucas", "first"], entry),
+                         (0.0, ""))
 
 
 class HybridRecallEndToEndTest(unittest.TestCase):

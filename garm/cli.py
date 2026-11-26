@@ -2,7 +2,8 @@
 
 v0.2: ``init`` takes a failure class, ``confirm`` records dossiers that
 earned their keep, and ``recall`` ranks by weighted overlap (signature
-terms count double) plus a small boost for confirmed dossiers.
+terms count double) plus a small boost for confirmed dossiers and a
+concept bonus when the query names a dossier's concept.
 v0.2.1: ``confirm --insight`` records dossiers whose analysis generated a
 new approach — the signal for open-ended work with no verifiable "fix".
 v1.1: ``import``/``export`` share dossier banks between agents; ``origin``
@@ -12,7 +13,11 @@ tracks provenance.
 from __future__ import annotations
 
 import argparse
+import json
+import os
 import sys
+from collections import Counter
+from datetime import datetime, timezone
 from pathlib import Path
 
 from . import __version__ as _VERSION
@@ -366,6 +371,40 @@ def cmd_export(args: argparse.Namespace) -> int:
     return 0
 
 
+# v0.2.12: the uncovered-query log. One JSON line per UNCOVERED
+# recall, in the bank directory next to index.jsonl: the query's
+# extracted keywords (never the full prompt text), the best score, and
+# the closest miss. It is the filing backlog — `garm coverage` ranks
+# "file next" from it. Opt out per-run with --no-coverage-log or
+# GARM_NO_COVERAGE_LOG=1.
+COVERAGE_LOG_NAME = "coverage-log.jsonl"
+
+
+def _log_uncovered(base: Path, query_keys: list[str], best: float,
+                   closest_id: str, matched: list[str],
+                   disabled: bool = False) -> None:
+    """Append one terms-only line to the uncovered-query log.
+
+    Best effort and silent: the log is a backlog aid, and recall must
+    never fail (or chatter) because the bank directory is read-only.
+    """
+    if disabled or os.environ.get("GARM_NO_COVERAGE_LOG") == "1":
+        return
+    try:
+        record = {
+            "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "terms": list(query_keys),
+            "best": round(best, 2),
+            "closest": closest_id,
+            "matched": list(matched),
+        }
+        with open(base / COVERAGE_LOG_NAME, "a",
+                  encoding="utf-8") as fh:
+            fh.write(json.dumps(record) + "\n")
+    except OSError:
+        pass
+
+
 def cmd_recall(args: argparse.Namespace) -> int:
     base = Path(args.dir)
     if not base.is_dir():
@@ -407,8 +446,8 @@ def cmd_recall(args: argparse.Namespace) -> int:
     else:
         scores = RU.score_corpus(query_keys, live)
     for entry in live:
-        total, sig_n, task_n, body_n, sem_n, fix_b, ins_b = scores[
-            entry["id"]]
+        total, sig_n, task_n, body_n, sem_n, fix_b, ins_b, concept_b = (
+            scores[entry["id"]])
         overlap = RU.matched_terms(query_keys, entry)
         tag = ""
         if args.semantic:
@@ -416,15 +455,32 @@ def cmd_recall(args: argparse.Namespace) -> int:
             if rs < rb:
                 tag = " [semantic]"
         scored.append((total, sig_n, task_n, body_n, sem_n, fix_b, ins_b,
-                       overlap, tag, entry))
-    scored.sort(key=lambda s: (-s[0], -(s[5] + s[6]), s[9]["id"]))
+                       concept_b, overlap, tag, entry))
+    scored.sort(key=lambda s: (-s[0], -(s[5] + s[6]), s[10]["id"]))
     shown = [s for s in scored if s[0] >= args.min_score]
+    # v0.2.12: the coverage verdict — display + log only, ranking
+    # untouched. Printed first on stdout so a reader (and the hook)
+    # sees the judgment before the table.
+    ranked = [(s[0], s[10]) for s in scored]
+    verdict, verdict_top, verdict_best, verdict_margin, verdict_terms = (
+        RU.coverage_verdict(query_keys, ranked, args.min_score,
+                            semantic=args.semantic))
+    verdict_terms_s = ",".join(verdict_terms) if verdict_terms else "-"
+    verdict_line = (
+        f"verdict: {verdict} (best: {verdict_best:.2f}, "
+        f"top: {verdict_top['id'] if verdict_top else '-'}, "
+        f"margin: {verdict_margin:.2f}, matched: {verdict_terms_s})")
     if scored and not shown:
-        # v0.2.11: everything below threshold — stdout stays empty. A
-        # 0.00 "hit" is noise, and the hook already treats silence as
-        # no-match. (Genuine absence — empty bank, everything dead or
-        # class-filtered out — still reports below, since that is not a
-        # below-threshold hit.)
+        # v0.2.12: below threshold is no longer silence on stdout —
+        # the UNCOVERED verdict names the best score and the closest
+        # miss, and the query is logged (terms only) as the filing
+        # backlog. (Genuine absence — empty bank, everything dead or
+        # class-filtered out — still reports below, since that is not
+        # a below-threshold hit.)
+        print(verdict_line)
+        _log_uncovered(base, query_keys, verdict_best,
+                       verdict_top["id"], verdict_terms,
+                       disabled=args.no_coverage_log)
         print(f"no dossiers at or above --min-score {args.min_score} "
               f"(best: {scored[0][0]:.2f})", file=sys.stderr)
         return 0
@@ -448,26 +504,31 @@ def cmd_recall(args: argparse.Namespace) -> int:
         # v0.2.10: empty bank is not an error (was exit 1).
         print(f"no dossiers found in {base}")
         return 0
+    print(verdict_line)
     if dead:
         _print_dead_block()
         print()
     top = max(1, args.top)
-    for (total, sig_n, task_n, body_n, sem_n, fix_b, ins_b, overlap, tag,
-         entry) in shown[:top]:
+    for (total, sig_n, task_n, body_n, sem_n, fix_b, ins_b, concept_b,
+         overlap, tag, entry) in shown[:top]:
         matched = ",".join(overlap) if overlap else "-"
         fixes = entry.get("confirmed_fixes", 0)
         insights = entry.get("confirmed_insights", 0)
         origin = entry.get("origin") or "?"
         dead_mark = " [premise-dead]" if entry.get("premise_dead") else ""
         sem_col = f" sem:{sem_n:.2f}" if args.semantic else ""
+        # Concept label is display-only: recompute it here rather than
+        # carrying a string through the scored tuple.
+        _, cpair = RU.concept_match(query_keys, entry)
+        concept_col = f" concept:{cpair}" if concept_b > 0 else ""
         print(f"{total:6.2f} | {entry['id']} | {entry['task']} "
               f"[{entry['path']}] (from:{origin} sig:{sig_n:.2f} task:{task_n:.2f}"
               f" body:{body_n:.2f}{sem_col} "
-              f"fix:{fixes} insight:{insights} matched: {matched}){dead_mark}{tag}")
+              f"fix:{fixes} insight:{insights}{concept_col} matched: {matched}){dead_mark}{tag}")
     # v0.2.11: append the top hit's actionable section — the CLI reader
     # should not have to open the file and sed it out. The hook ignores
     # these lines (its table regex doesn't match them).
-    top_entry = shown[0][9]
+    top_entry = shown[0][10]
     try:
         top_sections = D.read_dossier(
             base / top_entry["path"])["sections"]
@@ -480,6 +541,149 @@ def cmd_recall(args: argparse.Namespace) -> int:
         print(f"--- What retrieval would have changed "
               f"(top hit: {top_entry['id']}) ---")
         print(changed)
+    return 0
+
+
+def cmd_coverage(args: argparse.Namespace) -> int:
+    """The bank-level view (v0.2.12): what the bank covers, where it is
+    thin, and what to file next.
+
+    Per-failure-class counts include the zeros — a class with no
+    dossiers is a fact about the bank, not an absence of data.
+    Signature-term clusters show which failure signatures the bank
+    actually backs and how many dossiers back each term. Thin spots
+    are classes with 0–1 dossiers and signature terms appearing in
+    exactly one dossier. "File next" ranks those thin spots by how
+    often recent UNCOVERED queries rhymed with them (same-term or
+    alias match against the coverage log); it is a suggestion, never
+    an auto-file.
+    """
+    base = Path(args.dir)
+    if not base.is_dir():
+        print(f"error: directory not found: {base}", file=sys.stderr)
+        return 1
+    log_path = base / COVERAGE_LOG_NAME
+    if args.clear:
+        n = 0
+        if log_path.is_file():
+            try:
+                with open(log_path, encoding="utf-8") as fh:
+                    n = sum(1 for _ in fh)
+                log_path.unlink()
+            except OSError as exc:
+                print(f"error: cannot clear {log_path}: {exc}",
+                      file=sys.stderr)
+                return 1
+        print(f"cleared {n} logged uncovered "
+              f"quer{'y' if n == 1 else 'ies'}")
+        return 0
+    try:
+        registry = PR.load_registry(base)
+    except ValueError as exc:
+        print(f"warning: {exc}", file=sys.stderr)
+        registry = {"premises": {}}
+    entries = []
+    for md in sorted(base.rglob("*.md")):
+        if D.validate_dossier(md):
+            continue
+        entries.append(D.build_index_entry(md, base, registry))
+    class_counts = {cls: 0 for cls in D.VALID_FAILURE_CLASSES}
+    unclassified = 0
+    dead = 0
+    sig_counter: Counter = Counter()
+    for entry in entries:
+        cls = entry.get("failure_class")
+        if cls in class_counts:
+            class_counts[cls] += 1
+        else:
+            unclassified += 1
+        if entry.get("premise_dead"):
+            dead += 1
+        sig_counter.update(entry.get("sig_keywords") or [])
+    print(f"Coverage for {base} ({len(entries)} dossiers"
+          + (f", {dead} dead routes" if dead else "") + "):")
+    print("By failure class:")
+    for cls in D.VALID_FAILURE_CLASSES:
+        print(f"  {cls}: {class_counts[cls]}")
+    if unclassified:
+        print(f"  (unclassified: {unclassified})")
+    print("Signature-term clusters (top 10):")
+    # Display filter: a term in nearly every dossier is boilerplate
+    # (the "Name:" header, prose glue like "if"), not a cluster; a
+    # token with fewer than 2 letters is a number or fragment
+    # ("5777", "10m"), not a signature term. Both filters are display
+    # only — the counts underneath are unchanged.
+    n_entries = len(entries)
+
+    def _display_term(term: str, count: int) -> bool:
+        letters = sum(c.isalpha() for c in term)
+        return letters >= 2 and count <= 0.75 * n_entries
+
+    shown_clusters = [(t, c) for t, c in sig_counter.most_common()
+                      if _display_term(t, c)]
+    if shown_clusters:
+        for term, count in shown_clusters[:10]:
+            print(f"  {term}: {count}")
+        if len(shown_clusters) > 10:
+            print(f"  (+{len(shown_clusters) - 10} more terms)")
+    else:
+        print("  (none)")
+    thin_classes = [cls for cls in D.VALID_FAILURE_CLASSES
+                    if class_counts[cls] <= 1]
+    singleton_terms = sorted(t for t, c in sig_counter.items()
+                             if c == 1 and _display_term(t, c))
+    print("Thin spots (0-1 dossiers):")
+    if not thin_classes and not singleton_terms:
+        print("  (none)")
+    for cls in thin_classes:
+        print(f"  {cls}: {class_counts[cls]} dossier"
+              f"{'' if class_counts[cls] == 1 else 's'}")
+    for term in singleton_terms[:10]:
+        print(f'  signature term "{term}" appears in 1 dossier')
+    if len(singleton_terms) > 10:
+        print(f"  (+{len(singleton_terms) - 10} more singleton terms)")
+    # "File next": rank the thin spots by how often recent UNCOVERED
+    # queries rhymed with them.
+    logged_terms: list[list[str]] = []
+    if log_path.is_file():
+        try:
+            with open(log_path, encoding="utf-8") as fh:
+                for line in fh:
+                    try:
+                        rec = json.loads(line)
+                    except ValueError:
+                        continue
+                    if isinstance(rec.get("terms"), list):
+                        logged_terms.append([str(t) for t in rec["terms"]])
+        except OSError:
+            logged_terms = []
+    print(f"File next (from {len(logged_terms)} uncovered "
+          f"quer{'y' if len(logged_terms) == 1 else 'ies'}):")
+    if not logged_terms:
+        print("  (no uncovered queries logged yet — file next is "
+              "unranked; thin spots above are the candidates)")
+        return 0
+    ranked_terms: list[tuple[int, str]] = []
+    for term in singleton_terms:
+        hits = 0
+        for terms in logged_terms:
+            if any(RU.find_match(t, [term]) is not None for t in terms):
+                hits += 1
+        if hits:
+            ranked_terms.append((hits, term))
+    ranked_terms.sort(key=lambda t: (-t[0], t[1]))
+    for hits, term in ranked_terms[:5]:
+        print(f'  "{term}": {hits} uncovered quer'
+              f"{'y' if hits == 1 else 'ies'} rhymed with it — "
+              f"file a dossier on it")
+    if not ranked_terms:
+        print("  (no logged query rhymed with a thin spot)")
+    empty_classes = [cls for cls in D.VALID_FAILURE_CLASSES
+                     if class_counts[cls] == 0]
+    if empty_classes:
+        print("  classes with no dossiers at all: "
+              + ", ".join(empty_classes)
+              + " — file here when a query rhymes")
     return 0
 
 
@@ -668,7 +872,13 @@ def build_parser() -> argparse.ArgumentParser:
             "5 each — but only when the base score is positive, so boosts "
             "amplify evidence instead of manufacturing it. Below "
             "--min-score (default 1.0, matching the Claude Code hook), "
-            "recall prints nothing on stdout: a 0.00 \"hit\" is noise. "
+            "recall prints only the verdict line (UNCOVERED, with the "
+            "best score and the closest miss) on stdout and logs the "
+            "query terms to coverage-log.jsonl — a 0.00 \"hit\" is still "
+            "never served as a hit. Above the threshold the verdict "
+            "reads COVERED (top hit matches a signature term and "
+            "clearly beats the runner-up) or THIN (served, but flagged "
+            "weak). "
             "The top hit's \"What retrieval would have changed\" section "
             "is appended, so the CLI reader gets the actionable part "
             "without opening the file. "
@@ -693,11 +903,14 @@ def build_parser() -> argparse.ArgumentParser:
             "tagged [semantic], and a sem: subscore column appears. "
             "Output columns per hit: TOTAL | id | task [path] "
             "(from:origin sig:<n> task:<n> body:<n> fix:<n> insight:<n> "
-            "matched: <terms>). sig: counts matched signature terms (each "
+            "[concept:<a>+<b>] matched: <terms>). sig: counts matched signature terms (each "
             "worth 2 points); task: counts matched task terms (1 point "
             "each); body: counts matched body-section terms (1 point "
             "each); fix:/insight: show the dossier's confirmed counters "
-            "(each adds up to 5 points, already included in TOTAL)."
+            "(each adds up to 5 points, already included in TOTAL); "
+            "concept: appears only when two query terms sit adjacently "
+            "in the dossier's signature name (a flat +3.00 on TOTAL) — "
+            "the query naming the concept, not just sharing its words."
         ),
     )
     p_recall.add_argument("--task", required=True, help="describe the current task")
@@ -707,8 +920,9 @@ def build_parser() -> argparse.ArgumentParser:
                           help="minimum total score to print (default 1.0, "
                                "matching the Claude Code hook's "
                                "GARM_MIN_SCORE default). Below threshold, "
-                               "recall prints nothing on stdout — a 0.00 "
-                               "\"hit\" is noise. Use 0 to see everything, "
+                               "recall prints only the verdict line "
+                               "(UNCOVERED) on stdout — a 0.00 \"hit\" is "
+                               "noise. Use 0 to see everything, "
                                "as older versions did.")
     p_recall.add_argument("--class", dest="failure_class",
                           choices=D.VALID_FAILURE_CLASSES, default=None,
@@ -725,7 +939,33 @@ def build_parser() -> argparse.ArgumentParser:
                                "`garm semantic warmup` run. Field tests show it "
                                "does not reliably beat BM25 and may surface "
                                "topically-similar but irrelevant dossiers.")
+    p_recall.add_argument("--no-coverage-log", action="store_true",
+                          help="do not log this query if it comes back "
+                               "UNCOVERED (v0.2.12: UNCOVERED recalls are "
+                               "otherwise appended, terms only, to "
+                               "coverage-log.jsonl in the bank directory). "
+                               "GARM_NO_COVERAGE_LOG=1 does the same.")
     p_recall.set_defaults(func=cmd_recall)
+
+    p_coverage = sub.add_parser(
+        "coverage",
+        help="show what the bank covers, where it is thin, what to file next",
+        description=(
+            "The bank-level view (v0.2.12): per-failure-class counts "
+            "including the zeros, signature-term clusters with how many "
+            "dossiers back each term, thin spots (classes with 0-1 "
+            "dossiers, signature terms appearing in exactly one "
+            "dossier), and a ranked 'file next' list drawn from the "
+            "uncovered-query log (coverage-log.jsonl, written by "
+            "UNCOVERED recalls). Read-only except --clear, which empties "
+            "the log. This never files anything itself."
+        ),
+    )
+    p_coverage.add_argument("--dir", default="dossiers",
+                            help="dossier directory")
+    p_coverage.add_argument("--clear", action="store_true",
+                            help="empty the uncovered-query log")
+    p_coverage.set_defaults(func=cmd_coverage)
 
     p_list = sub.add_parser("list", help="compact table of dossiers")
     p_list.add_argument("--dir", default="dossiers", help="dossier directory")

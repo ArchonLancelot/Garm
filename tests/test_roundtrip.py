@@ -100,7 +100,10 @@ class RoundTripTest(unittest.TestCase):
                         # is about ranking order, not the threshold.
                         "--min-score", "0", cwd=tmp)
             self.assertEqual(r.returncode, 0, r.stderr)
-            lines = [ln for ln in r.stdout.splitlines() if ln.strip()]
+            # v0.2.12: the verdict line leads recall stdout — hit rows
+            # start after it, so exclude it to keep the ranking indices.
+            lines = [ln for ln in r.stdout.splitlines()
+                     if ln.strip() and not ln.startswith("verdict:")]
             self.assertGreaterEqual(len(lines), 2)
             id_a = D.split_frontmatter(path_a.read_text())[0]["id"]
             id_b = D.split_frontmatter(path_b.read_text())[0]["id"]

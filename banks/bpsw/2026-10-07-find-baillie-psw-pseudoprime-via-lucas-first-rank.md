@@ -7,6 +7,7 @@ task: "Find Baillie-PSW pseudoprime via Lucas-first rank-of-apparition construct
 outcome: failed
 failure_class: reasoning-error
 confirmed_fixes: 0
+confirmed_insights: 1
 ---
 
 # Failure dossier: Find Baillie-PSW pseudoprime via Lucas-first rank-of-apparition construction
@@ -32,10 +33,7 @@ but it confirms the diagnosis rather than curing it: the two conditions
 are nearly independent, and one-sided construction cannot bridge them.
 
 ## Failure signature
-Name: mirror-image-also-one-sided. If the dossier says "construct for B
-instead" and you do, and B-tickets fail A just as A-tickets failed B,
-the problem isn't which side you construct for — it's the one-sidedness
-itself. The next inversion is two-sided construction (satisfy both
+Name: lucas-first-rank-construction-also-one-sided. If you construct Lucas-first tickets (rank of apparition) hoping they pass the Fermat test, and they fail Fermat just as Fermat-first tickets failed Lucas, the problem isn't which side you construct for — it's the one-sidedness itself. The next inversion is two-sided construction (satisfy both
 simultaneously), which for BPSW is Pomerance's subset-product —
 known intractable (Chen-Greene). Recognize when the idea chain terminates.
 

@@ -62,13 +62,13 @@ class VersionTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             r = garm("version", cwd=tmp)
             self.assertEqual(r.returncode, 0, r.stderr)
-            self.assertEqual(r.stdout.strip(), "garm 0.2.11")
+            self.assertEqual(r.stdout.strip(), "garm 0.2.12")
 
     def test_version_flag(self):
         with tempfile.TemporaryDirectory() as tmp:
             r = garm("--version", cwd=tmp)
             self.assertEqual(r.returncode, 0, r.stderr)
-            self.assertEqual(r.stdout.strip(), "garm 0.2.11")
+            self.assertEqual(r.stdout.strip(), "garm 0.2.12")
 
 
 class RecallThresholdTest(unittest.TestCase):
@@ -77,14 +77,16 @@ class RecallThresholdTest(unittest.TestCase):
         r = garm("index", "--dir", "dossiers", cwd=tmp)
         self.assertEqual(r.returncode, 0, r.stderr)
 
-    def test_nonsense_query_prints_nothing_on_stdout(self):
-        # The field test's "xyzzy plugh quux" case: a 0.00 "hit" is noise.
+    def test_nonsense_query_prints_uncovered_verdict(self):
+        # The field test's "xyzzy plugh quux" case: a 0.00 "hit" is noise,
+        # but v0.2.12 prints the UNCOVERED verdict on stdout instead of
+        # silence, so the caller can see the best score and closest miss.
         with tempfile.TemporaryDirectory() as tmp:
             self._bank(tmp)
             r = garm("recall", "--task", "xyzzy plugh quux",
                      "--dir", "dossiers", cwd=tmp)
             self.assertEqual(r.returncode, 0, r.stderr)
-            self.assertEqual(r.stdout, "")
+            self.assertIn("verdict: UNCOVERED", r.stdout)
             self.assertIn("min-score", r.stderr)
 
     def test_weak_hit_suppressed_by_default_shown_with_zero(self):
@@ -102,7 +104,11 @@ class RecallThresholdTest(unittest.TestCase):
             r = garm("recall", "--task", "alpha gamma",
                      "--dir", "dossiers", cwd=tmp)
             self.assertEqual(r.returncode, 0, r.stderr)
-            self.assertEqual(r.stdout, "")
+            # v0.2.12: below threshold prints the UNCOVERED verdict, not
+            # silence — but still serves no hit: stdout is only the
+            # verdict line, no table row.
+            self.assertIn("verdict: UNCOVERED", r.stdout)
+            self.assertEqual(len(r.stdout.strip().splitlines()), 1)
             r = garm("recall", "--task", "alpha gamma",
                      "--dir", "dossiers", "--min-score", "0", cwd=tmp)
             self.assertEqual(r.returncode, 0, r.stderr)
@@ -127,7 +133,10 @@ class RecallThresholdTest(unittest.TestCase):
                      "flaky checkout race parallel workers",
                      "--dir", "dossiers", "--min-score", "999", cwd=tmp)
             self.assertEqual(r.returncode, 0, r.stderr)
-            self.assertEqual(r.stdout, "")
+            # v0.2.12: no hit is served, but the UNCOVERED verdict names
+            # the best score instead of silence.
+            self.assertIn("verdict: UNCOVERED", r.stdout)
+            self.assertNotIn("Flaky checkout race", r.stdout)
 
 
 class TtyGuardTest(unittest.TestCase):

@@ -4,7 +4,10 @@
 Reads the hook payload from stdin, runs ``garm recall`` against the
 dossier directory, and — only if something relevant matches — prints the
 ``hookSpecificOutput``/``additionalContext`` envelope so the agent sees
-past failure autopsies *before* it starts on the prompt.
+past failure autopsies *before* it starts on the prompt. v0.2.12: when
+recall comes back UNCOVERED (nothing clears the threshold), the hook
+injects one explicit line instead of nothing — silence is ambiguous,
+and the agent needs to know the memory was checked.
 
 Design rules (the hook sits on the interactive critical path):
   * Never break the session. Any error, missing binary, missing dir, or
@@ -56,6 +59,13 @@ CONTEXT_CHARS = 8000        # total cap, under Claude Code's 10k limit
 
 _RECALL_LINE_RE = re.compile(
     r"^\s*(\d+(?:\.\d+)?)\s*\|\s*(\S+)\s*\|\s*(.*?)\s*\[[^\]]*\]\s*\(from:(.*?)\ssig:\d+(?:\.\d+)?"
+)
+# v0.2.12: recall prints a verdict line on stdout. The hook needs it
+# only for the UNCOVERED case (no hits): the verdict names the best
+# score, which the explicit "nothing relevant" line quotes.
+_VERDICT_RE = re.compile(
+    r"^verdict:\s+(COVERED|THIN|UNCOVERED)\s+\(best:\s*([0-9.]+)",
+    re.MULTILINE,
 )
 _SECTION_RE = re.compile(
     r"^##\s*what retrieval would have changed\s*$", re.IGNORECASE | re.MULTILINE
@@ -166,6 +176,24 @@ def main() -> int:
         rel = pm.group(1) if pm else ""
         hits.append((score, dossier_id, task, rel, origin))
     if not hits:
+        # v0.2.12: recall now says UNCOVERED on stdout instead of
+        # silence. Silence is ambiguous — the agent can't tell "never
+        # checked" from "checked, nothing relevant" — so the hook
+        # injects one explicit line, quoting the best score. No verdict
+        # line (older recall, empty bank) stays silent, as before.
+        m = _VERDICT_RE.search(proc.stdout)
+        if m and m.group(1) == "UNCOVERED":
+            context = (
+                "Garm checked its failure memory for this task and found "
+                f"nothing relevant (best match scored {m.group(2)}). No "
+                "past failure applies — proceed without it."
+            )
+            print(json.dumps({
+                "hookSpecificOutput": {
+                    "hookEventName": "UserPromptSubmit",
+                    "additionalContext": context,
+                }
+            }))
         return 0
 
     blocks = []

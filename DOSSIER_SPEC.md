@@ -278,9 +278,38 @@ score = 2 × BM25(query, sig_keywords) + 1 × BM25(query, task_keywords)
 
 with two gates: confirm boosts apply only when the base lane score
 (2×sig + task + body) is positive — boosts amplify evidence, never
-manufacture it — and the CLI prints nothing on stdout below
-`--min-score` (default 1.0, matching the Claude Code hook's
-`GARM_MIN_SCORE` default): a 0.00 "hit" is noise, not a match.
+manufacture it — and the CLI serves nothing below `--min-score`
+(default 1.0, matching the Claude Code hook's `GARM_MIN_SCORE`
+default): a 0.00 "hit" is noise, not a match.
+
+(v0.2.12) The coverage verdict. Ranking is untouched, but every
+recall now prints a verdict line first — `verdict: COVERED | THIN |
+UNCOVERED (best: <score>, top: <id>, margin: <top − runner-up>,
+matched: <terms>)` — so a 1.05 hit from generic words no longer looks
+like a 30-point hit on the exact failure signature:
+
+- **COVERED**: top score ≥ `--min-score`, the top hit matches at
+  least one signature term, and it beats the runner-up by ≥ 5.0.
+- **THIN**: top score ≥ `--min-score` but no signature term matched,
+  or the margin is under 5.0 — served, but flagged as weak.
+- **UNCOVERED**: nothing clears `--min-score`; the closest miss is
+  named, and the query's terms (never the full prompt text) are
+  appended to `coverage-log.jsonl` in the bank directory as the filing
+  backlog. Opt out with `--no-coverage-log` or
+  `GARM_NO_COVERAGE_LOG=1`.
+
+The 5.0 margin is calibrated, not guessed: measured 2026-11-10 on the
+three shipped banks (bpsw, earth-moon, imo), in-bank queries had
+margins 4.50–32.11 while off-topic/generic queries that still cleared
+1.0 topped out at 4.74 — 5.0 gives zero false COVERED on the measured
+set, at the cost of 4/29 genuine queries flagged THIN instead of
+COVERED (still served). The margin gate is BM25-scale: in `--semantic`
+mode the verdict uses the threshold + signature gates only. `garm
+coverage` is the bank-level view — per-class counts including zeros,
+signature-term clusters, thin spots, and a "file next" list ranked
+from the uncovered-query log. The hook injects an explicit "checked,
+nothing relevant (best match scored X)" line on UNCOVERED instead of
+silence.
 
 BM25 weights each query term by inverse document frequency: a term
 appearing in every dossier (like "one") barely counts, while a rare,

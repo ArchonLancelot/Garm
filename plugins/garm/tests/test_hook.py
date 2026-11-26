@@ -140,7 +140,10 @@ class HookProtocolTest(unittest.TestCase):
             self.assertIn("Check the staging deploy lock", ctx)
             self.assertLessEqual(len(ctx), 8000)
 
-    def test_no_match_is_silent(self):
+    def test_no_match_injects_uncovered_line(self):
+        # v0.2.12: silence was ambiguous ("never checked" vs "checked,
+        # nothing relevant"), so the hook now injects one explicit line
+        # quoting the best score when recall comes back UNCOVERED.
         with tempfile.TemporaryDirectory() as tmp:
             d = Path(tmp) / "dossiers"
             d.mkdir()
@@ -153,7 +156,10 @@ class HookProtocolTest(unittest.TestCase):
             env = {"GARM_DIR": str(d), "GARM_HOME": str(GARM_HOME)}
             r = run_hook(base_payload("bake sourdough bread recipe", tmp), env)
             self.assertEqual(r.returncode, 0)
-            self.assertEqual(r.stdout, "")
+            envelope = json.loads(r.stdout)
+            ctx = envelope["hookSpecificOutput"]["additionalContext"]
+            self.assertIn("found nothing relevant", ctx)
+            self.assertIn("best match scored", ctx)
 
     def test_min_score_threshold(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -169,7 +175,11 @@ class HookProtocolTest(unittest.TestCase):
                    "GARM_MIN_SCORE": "999"}
             r = run_hook(base_payload("deploy widgets to staging again", tmp), env)
             self.assertEqual(r.returncode, 0)
-            self.assertEqual(r.stdout, "")
+            # v0.2.12: the hit is clipped, but the hook now says so
+            # instead of staying silent.
+            envelope = json.loads(r.stdout)
+            ctx = envelope["hookSpecificOutput"]["additionalContext"]
+            self.assertIn("found nothing relevant", ctx)
 
     def test_low_min_score_passes_through_to_recall(self):
         # v0.2.11: the hook must pass --min-score explicitly. A single-doc
@@ -192,11 +202,14 @@ class HookProtocolTest(unittest.TestCase):
             envelope = json.loads(r.stdout)
             ctx = envelope["hookSpecificOutput"]["additionalContext"]
             self.assertIn("2026-10-08-alpha-gamma", ctx)
-            # And the default (1.0) genuinely clips this hit.
+            # And the default (1.0) genuinely clips this hit — v0.2.12:
+            # the hook says so instead of staying silent.
             env = {"GARM_DIR": str(d), "GARM_HOME": str(GARM_HOME)}
             r = run_hook(base_payload("alpha gamma", tmp), env)
             self.assertEqual(r.returncode, 0)
-            self.assertEqual(r.stdout, "")
+            envelope = json.loads(r.stdout)
+            ctx = envelope["hookSpecificOutput"]["additionalContext"]
+            self.assertIn("found nothing relevant", ctx)
 
     def test_brackets_in_task_do_not_misparse_path(self):
         with tempfile.TemporaryDirectory() as tmp:
